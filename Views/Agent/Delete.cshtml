@@ -1,0 +1,60 @@
+@model AgentControlPanel.Models.Agent
+
+@{
+    ViewData["Title"] = "Delete Agent";
+}
+
+<div class="px-4 py-8 max-w-3xl mx-auto">
+    <div class="bg-white px-4 py-5 sm:px-6 shadow sm:rounded-lg mb-6 border border-red-200">
+        <h3 class="text-lg leading-6 font-medium text-red-900">Delete Agent</h3>
+        <p class="mt-1 max-w-2xl text-sm text-red-500">Are you sure you want to permanently delete this agent?</p>
+    </div>
+    
+    <div class="bg-white shadow overflow-hidden sm:rounded-lg">
+        <div class="px-4 py-5 sm:px-6">
+            <h3 class="text-lg leading-6 font-medium text-gray-900">Agent Details</h3>
+        </div>
+        <div class="border-t border-gray-200 px-4 py-5 sm:p-0">
+            <dl class="sm:divide-y sm:divide-gray-200">
+                <div class="py-4 sm:py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+                    <dt class="text-sm font-medium text-gray-500">
+                        @Html.DisplayNameFor(model => model.Name)
+                    </dt>
+                    <dd class="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">
+                        @Html.DisplayFor(model => model.Name)
+                    </dd>
+                </div>
+                <div class="py-4 sm:py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+                    <dt class="text-sm font-medium text-gray-500">
+                        @Html.DisplayNameFor(model => model.Description)
+                    </dt>
+                    <dd class="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">
+                        @(string.IsNullOrEmpty(Model.Description) ? "No description." : Model.Description)
+                    </dd>
+                </div>
+                <div class="py-4 sm:py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+                    <dt class="text-sm font-medium text-gray-500">
+                        @Html.DisplayNameFor(model => model.SystemPrompt)
+                    </dt>
+                    <dd class="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">
+                        @if (string.IsNullOrEmpty(Model.SystemPrompt)) {
+                            <span class="text-gray-400 italic">No system prompt configured.</span>
+                        } else {
+                            <pre class="whitespace-pre-wrap break-words font-mono text-sm bg-gray-50 p-2 rounded border border-gray-100 line-clamp-3">@Model.SystemPrompt</pre>
+                        }
+                    </dd>
+                </div>
+            </dl>
+        </div>
+    </div>
+    
+    <form asp-action="Delete" class="mt-6 flex gap-4">
+        <input type="hidden" asp-for="Id" />
+        <button type="submit" class="inline-flex items-center justify-center px-4 py-2 border border-transparent font-medium rounded-md text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 sm:text-sm">
+            Delete Permanently
+        </button>
+        <a asp-action="Index" class="inline-flex items-center justify-center px-4 py-2 border border-gray-300 shadow-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:text-sm">
+            Cancel
+        </a>
+    </form>
+</div>

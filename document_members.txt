@@ -1,0 +1,28 @@
+Methods of Amazon.Runtime.Documents.Document:
+ - get_Type
+ - IsBool
+ - AsBool
+ - IsDictionary
+ - AsDictionary
+ - IsDouble
+ - AsDouble
+ - IsInt
+ - AsInt
+ - IsList
+ - AsList
+ - IsLong
+ - AsLong
+ - IsNull
+ - IsString
+ - AsString
+ - Equals
+ - Equals
+ - Equals
+ - GetHashCode
+ - Add
+ - Add
+ - ToString
+ - GetType
+
+Properties:
+ - Type

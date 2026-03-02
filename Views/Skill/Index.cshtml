@@ -1,0 +1,165 @@
+@model IEnumerable<AgentControlPanel.Models.Skill>
+
+@{
+    ViewData["Title"] = "Skills";
+}
+
+<div class="px-4 py-8 max-w-7xl mx-auto">
+    <div class="flex items-center justify-between mb-8">
+        <div>
+            <h1 class="text-3xl font-bold text-gray-900">Skills</h1>
+            <p class="mt-2 text-sm text-gray-600">Manage and generate AI skills for your agents.</p>
+        </div>
+        <div class="flex gap-3">
+            <button type="button" id="openModalBtn" class="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors">
+                <svg class="-ml-1 mr-2 h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                    <path fill-rule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clip-rule="evenodd" />
+                </svg>
+                Generate with AI
+            </button>
+            <a asp-action="Create" class="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors">
+                Create New Skill
+            </a>
+        </div>
+    </div>
+
+    <!-- Modal overlay & dialog -->
+    <div id="generateSkillModal" class="relative z-50 hidden" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+        <!-- Background backdrop -->
+        <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity"></div>
+
+        <div class="fixed inset-0 z-10 w-screen overflow-y-auto">
+            <div class="flex min-h-full items-end justify-center p-4 text-center sm:items-center sm:p-0">
+                <div class="relative transform overflow-hidden rounded-lg bg-white text-left shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-xl">
+                    <div class="bg-white px-4 pb-4 pt-5 sm:p-6 sm:pb-4 border-b border-gray-200">
+                        <div class="sm:flex sm:items-start">
+                            <div class="mx-auto flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-indigo-100 sm:mx-0 sm:h-10 sm:w-10">
+                                <svg class="h-6 w-6 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" />
+                                </svg>
+                            </div>
+                            <div class="mt-3 text-center sm:ml-4 sm:mt-0 sm:text-left w-full">
+                                <h3 class="text-lg font-semibold leading-6 text-gray-900" id="modal-title">Generate Skill with AI (Claude Opus 4.6)</h3>
+                                <div class="mt-4">
+                                    <label for="skillDescription" class="block text-sm font-medium leading-6 text-gray-900 mb-2">Describe what the skill should do:</label>
+                                    <textarea id="skillDescription" rows="4" class="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6 px-3" placeholder="e.g., A skill that connects to Jira and creates a bug report..."></textarea>
+                                </div>
+                                
+                                <div id="loadingIndicator" class="hidden mt-4 text-center">
+                                    <svg class="animate-spin mx-auto h-8 w-8 text-indigo-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                    </svg>
+                                    <p class="mt-2 text-sm text-gray-500">Claude is generating the SKILL.md and scripts. Please wait...</p>
+                                </div>
+                                <div id="errorMessage" class="hidden mt-4 p-3 rounded-md bg-red-50 text-sm text-red-600 border border-red-200"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="bg-gray-50 px-4 py-3 sm:flex sm:flex-row-reverse sm:px-6">
+                        <button type="button" id="btnGenerate" class="inline-flex w-full justify-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 sm:ml-3 sm:w-auto transition-colors disabled:opacity-50">Generate</button>
+                        <button type="button" id="closeModalBtn" class="mt-3 inline-flex w-full justify-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 sm:mt-0 sm:w-auto transition-colors">Cancel</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts for modal and AI generation -->
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            const modal = document.getElementById('generateSkillModal');
+            const openModalBtn = document.getElementById('openModalBtn');
+            const closeModalBtn = document.getElementById('closeModalBtn');
+            
+            const btnGenerate = document.getElementById('btnGenerate');
+            const skillDescription = document.getElementById('skillDescription');
+            const loadingIndicator = document.getElementById('loadingIndicator');
+            const errorMessage = document.getElementById('errorMessage');
+
+            // Modal toggle logic
+            openModalBtn.addEventListener('click', () => modal.classList.remove('hidden'));
+            closeModalBtn.addEventListener('click', () => modal.classList.add('hidden'));
+
+            if (btnGenerate) {
+                btnGenerate.addEventListener('click', async function () {
+                    const desc = skillDescription.value.trim();
+                    if (!desc) {
+                        errorMessage.textContent = "Please enter a description.";
+                        errorMessage.classList.remove('hidden');
+                        return;
+                    }
+
+                    // Show loading
+                    errorMessage.classList.add('hidden');
+                    loadingIndicator.classList.remove('hidden');
+                    btnGenerate.disabled = true;
+
+                    try {
+                        const response = await fetch('@Url.Action("GenerateWithAI", "Skill")', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify(desc)
+                        });
+
+                        if (response.ok) {
+                            window.location.reload();
+                        } else {
+                            const errText = await response.text();
+                            errorMessage.textContent = errText;
+                            errorMessage.classList.remove('hidden');
+                        }
+                    } catch (error) {
+                        errorMessage.textContent = "An error occurred while calling the server.";
+                        errorMessage.classList.remove('hidden');
+                    } finally {
+                        loadingIndicator.classList.add('hidden');
+                        btnGenerate.disabled = false;
+                    }
+                });
+            }
+        });
+    </script>
+
+    <!-- Skills Table -->
+    <div class="mt-8 overflow-hidden shadow ring-1 ring-black ring-opacity-5 sm:rounded-lg">
+        <table class="min-w-full divide-y divide-gray-300">
+            <thead class="bg-gray-50">
+                <tr>
+                    <th scope="col" class="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-900 sm:pl-6">@Html.DisplayNameFor(model => model.Name)</th>
+                    <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Source</th>
+                    <th scope="col" class="relative py-3.5 pl-3 pr-4 sm:pr-6">
+                        <span class="sr-only">Actions</span>
+                    </th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-200 bg-white">
+                @if (!Model.Any()) {
+                    <tr>
+                        <td colspan="3" class="py-8 text-center text-sm text-gray-500">No skills found. Create or generate one to get started.</td>
+                    </tr>
+                } else {
+                    @foreach (var item in Model) {
+                        <tr class="hover:bg-gray-50 transition-colors">
+                            <td class="whitespace-nowrap py-4 pl-4 pr-3 text-sm font-medium text-gray-900 sm:pl-6">@Html.DisplayFor(modelItem => item.Name)</td>
+                            <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                                @if (item.IsAIGenerated) {
+                                    <span class="inline-flex items-center rounded-md bg-indigo-50 px-2 py-1 text-xs font-medium text-indigo-700 ring-1 ring-inset ring-indigo-700/10">AI Generated</span>
+                                } else {
+                                    <span class="inline-flex items-center rounded-md bg-gray-50 px-2 py-1 text-xs font-medium text-gray-600 ring-1 ring-inset ring-gray-500/10">Manual</span>
+                                }
+                            </td>
+                            <td class="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-6">
+                                <a asp-action="Edit" asp-route-id="@item.Id" class="text-blue-600 hover:text-blue-900 mr-4">Edit</a>
+                                <a asp-action="Details" asp-route-id="@item.Id" class="text-indigo-600 hover:text-indigo-900 mr-4">Details</a>
+                                <a asp-action="Delete" asp-route-id="@item.Id" class="text-red-600 hover:text-red-900">Delete</a>
+                            </td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+    </div>
+</div>

@@ -1,0 +1,115 @@
+@model AgentControlPanel.Models.Skill
+@using System.Text.Json
+@using AgentControlPanel.Models
+
+@{
+    ViewData["Title"] = "Skill Details";
+    var scripts = new List<AgentSkillScript>();
+    try {
+        if (!string.IsNullOrEmpty(Model.ScriptsJson)) {
+            var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            scripts = JsonSerializer.Deserialize<List<AgentSkillScript>>(Model.ScriptsJson, options) ?? new List<AgentSkillScript>();
+        }
+    } catch { }
+}
+
+<div class="px-4 py-8 max-w-7xl mx-auto">
+    <div class="md:flex md:items-center md:justify-between mb-8">
+        <div class="flex-1 min-w-0">
+            <h2 class="text-2xl font-bold leading-7 text-gray-900 sm:text-3xl sm:truncate">
+                @Model.Name
+            </h2>
+        </div>
+        <div class="mt-4 flex md:ml-4 md:mt-0 gap-3">
+            <a asp-action="Edit" asp-route-id="@Model.Id" class="inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50">
+                Edit Skill
+            </a>
+            <a asp-action="Index" class="inline-flex items-center rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600">
+                Back to List
+            </a>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <div class="lg:col-span-2 space-y-8">
+            <!-- SKILL.md Section -->
+            <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                <div class="bg-gray-900 border-b border-gray-200 px-6 py-4">
+                    <div class="flex items-center gap-2">
+                        <svg class="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                        <h3 class="text-base font-semibold text-white">SKILL.md</h3>
+                    </div>
+                </div>
+                <div class="p-6 overflow-auto">
+                    <pre class="whitespace-pre-wrap break-words text-sm text-gray-800 font-mono bg-gray-50 p-4 rounded-lg border border-gray-100">@Model.SkillMd</pre>
+                </div>
+            </div>
+
+            <!-- Scripts Section -->
+            <div>
+                <h3 class="text-lg font-medium text-gray-900 mb-4">Implementation Scripts</h3>
+                
+                @if(scripts.Any()) {
+                    <div class="space-y-6">
+                        @foreach(var script in scripts) {
+                            <div class="bg-white rounded-xl shadow-sm border border-indigo-100 overflow-hidden">
+                                <div class="bg-indigo-50 border-b border-indigo-100 px-6 py-3 flex items-center justify-between">
+                                    <div class="flex items-center gap-2">
+                                        <svg class="h-5 w-5 text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+                                        </svg>
+                                        <span class="font-medium text-gray-900">@script.Name</span>
+                                    </div>
+                                    <span class="inline-flex items-center rounded-md bg-white px-2 py-1 text-xs font-medium text-gray-600 ring-1 ring-inset ring-gray-200 shadow-sm">
+                                        @script.Language
+                                    </span>
+                                </div>
+                                <div class="bg-gray-900 p-4 overflow-auto">
+                                    <pre class="m-0 text-sm leading-6 text-gray-300 font-mono"><code>@script.Code</code></pre>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                } else {
+                    <div class="text-center rounded-lg border-2 border-dashed border-gray-300 px-6 py-10">
+                        <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+                        </svg>
+                        <h3 class="mt-2 text-sm font-medium text-gray-900">No scripts</h3>
+                        <p class="mt-1 text-sm text-gray-500">This skill currently has no associated implementation scripts.</p>
+                    </div>
+                }
+            </div>
+        </div>
+
+        <div class="lg:col-span-1">
+            <div class="bg-white overflow-hidden shadow-sm rounded-xl border border-gray-200">
+                <div class="px-4 py-5 sm:px-6 bg-gray-50 border-b border-gray-200">
+                    <h3 class="text-base font-semibold leading-6 text-gray-900">Skill Metadata</h3>
+                </div>
+                <div class="border-t border-gray-200 px-4 py-5 sm:p-0">
+                    <dl class="sm:divide-y sm:divide-gray-200">
+                        <div class="py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+                            <dt class="text-sm font-medium text-gray-500">Source</dt>
+                            <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0">
+                                @if (Model.IsAIGenerated) {
+                                    <span class="inline-flex items-center rounded-md bg-indigo-50 px-2 py-1 text-xs font-medium text-indigo-700 ring-1 ring-inset ring-indigo-700/10">AI Generated</span>
+                                } else {
+                                    <span class="inline-flex items-center rounded-md bg-gray-50 px-2 py-1 text-xs font-medium text-gray-600 ring-1 ring-inset ring-gray-500/10">Manual</span>
+                                }
+                            </dd>
+                        </div>
+                        <div class="py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+                            <dt class="text-sm font-medium text-gray-500">Created</dt>
+                            <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0">
+                                @Model.CreatedAt.ToLocalTime().ToString("g")
+                            </dd>
+                        </div>
+                    </dl>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

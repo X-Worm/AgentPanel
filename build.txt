@@ -1,0 +1,26 @@
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+C:\Program Files\dotnet\sdk\10.0.200-preview.0.26103.119\Sdks\Microsoft.NET.Sdk\targets\Microsoft.NET.RuntimeIdentifierInference.targets(383,5): message NETSDK1057: You are using a preview version of .NET. See: https://aka.ms/dotnet-support-policy [C:\SharableAiSkillBuilder_AG\AgentControlPanel.csproj]
+C:\SharableAiSkillBuilder_AG\Services\ConversationService.cs(264,20): error CS0037: Cannot convert null to 'Document' because it is a non-nullable value type [C:\SharableAiSkillBuilder_AG\AgentControlPanel.csproj]
+C:\SharableAiSkillBuilder_AG\Services\ConversationService.cs(265,17): error CS0428: Cannot convert method group 'IsString' to non-delegate type 'bool'. Did you intend to invoke the method? [C:\SharableAiSkillBuilder_AG\AgentControlPanel.csproj]
+C:\SharableAiSkillBuilder_AG\Services\ConversationService.cs(266,17): error CS0428: Cannot convert method group 'IsDouble' to non-delegate type 'bool'. Did you intend to invoke the method? [C:\SharableAiSkillBuilder_AG\AgentControlPanel.csproj]
+C:\SharableAiSkillBuilder_AG\Services\ConversationService.cs(267,17): error CS0428: Cannot convert method group 'IsBool' to non-delegate type 'bool'. Did you intend to invoke the method? [C:\SharableAiSkillBuilder_AG\AgentControlPanel.csproj]
+C:\SharableAiSkillBuilder_AG\Services\ConversationService.cs(268,17): error CS0428: Cannot convert method group 'IsInt' to non-delegate type 'bool'. Did you intend to invoke the method? [C:\SharableAiSkillBuilder_AG\AgentControlPanel.csproj]
+C:\SharableAiSkillBuilder_AG\Services\ConversationService.cs(269,17): error CS0428: Cannot convert method group 'IsLong' to non-delegate type 'bool'. Did you intend to invoke the method? [C:\SharableAiSkillBuilder_AG\AgentControlPanel.csproj]
+C:\SharableAiSkillBuilder_AG\Services\ConversationService.cs(271,17): error CS0428: Cannot convert method group 'IsList' to non-delegate type 'bool'. Did you intend to invoke the method? [C:\SharableAiSkillBuilder_AG\AgentControlPanel.csproj]
+C:\SharableAiSkillBuilder_AG\Services\ConversationService.cs(276,17): error CS1061: 'Document' does not contain a definition for 'IsMap' and no accessible extension method 'IsMap' accepting a first argument of type 'Document' could be found (are you missing a using directive or an assembly reference?) [C:\SharableAiSkillBuilder_AG\AgentControlPanel.csproj]
+
+Build FAILED.
+
+C:\SharableAiSkillBuilder_AG\Services\ConversationService.cs(264,20): error CS0037: Cannot convert null to 'Document' because it is a non-nullable value type [C:\SharableAiSkillBuilder_AG\AgentControlPanel.csproj]
+C:\SharableAiSkillBuilder_AG\Services\ConversationService.cs(265,17): error CS0428: Cannot convert method group 'IsString' to non-delegate type 'bool'. Did you intend to invoke the method? [C:\SharableAiSkillBuilder_AG\AgentControlPanel.csproj]
+C:\SharableAiSkillBuilder_AG\Services\ConversationService.cs(266,17): error CS0428: Cannot convert method group 'IsDouble' to non-delegate type 'bool'. Did you intend to invoke the method? [C:\SharableAiSkillBuilder_AG\AgentControlPanel.csproj]
+C:\SharableAiSkillBuilder_AG\Services\ConversationService.cs(267,17): error CS0428: Cannot convert method group 'IsBool' to non-delegate type 'bool'. Did you intend to invoke the method? [C:\SharableAiSkillBuilder_AG\AgentControlPanel.csproj]
+C:\SharableAiSkillBuilder_AG\Services\ConversationService.cs(268,17): error CS0428: Cannot convert method group 'IsInt' to non-delegate type 'bool'. Did you intend to invoke the method? [C:\SharableAiSkillBuilder_AG\AgentControlPanel.csproj]
+C:\SharableAiSkillBuilder_AG\Services\ConversationService.cs(269,17): error CS0428: Cannot convert method group 'IsLong' to non-delegate type 'bool'. Did you intend to invoke the method? [C:\SharableAiSkillBuilder_AG\AgentControlPanel.csproj]
+C:\SharableAiSkillBuilder_AG\Services\ConversationService.cs(271,17): error CS0428: Cannot convert method group 'IsList' to non-delegate type 'bool'. Did you intend to invoke the method? [C:\SharableAiSkillBuilder_AG\AgentControlPanel.csproj]
+C:\SharableAiSkillBuilder_AG\Services\ConversationService.cs(276,17): error CS1061: 'Document' does not contain a definition for 'IsMap' and no accessible extension method 'IsMap' accepting a first argument of type 'Document' could be found (are you missing a using directive or an assembly reference?) [C:\SharableAiSkillBuilder_AG\AgentControlPanel.csproj]
+    0 Warning(s)
+    8 Error(s)
+
+Time Elapsed 00:00:02.39

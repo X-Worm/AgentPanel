@@ -1,0 +1,256 @@
+@model AgentControlPanel.Models.Agent
+
+@{
+    ViewData["Title"] = $"Test Agent - {Model.Name}";
+}
+
+<div class="px-4 py-8 max-w-7xl mx-auto h-[calc(100vh-120px)] flex flex-col">
+    <style>
+        .markdown-body table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 0.5rem 0;
+            font-size: 0.95em;
+        }
+
+        .markdown-body th,
+        .markdown-body td {
+            border: 1px solid #d1d5db;
+            padding: 0.35rem 0.5rem;
+            text-align: left;
+            vertical-align: top;
+        }
+
+        .markdown-body thead th {
+            background: #f3f4f6;
+            font-weight: 600;
+        }
+
+        .markdown-body code {
+            background: #f3f4f6;
+            padding: 0.1rem 0.25rem;
+            border-radius: 0.25rem;
+            font-size: 0.9em;
+        }
+
+        .markdown-body pre {
+            background: #111827;
+            color: #f9fafb;
+            padding: 0.75rem;
+            border-radius: 0.5rem;
+            overflow: auto;
+            margin: 0.5rem 0;
+        }
+
+        .markdown-body p {
+            margin: 10px !important;
+        }
+
+        .markdown-body pre code {
+            background: transparent;
+            padding: 0;
+            color: inherit;
+        }
+    </style>
+    <!-- Header -->
+    <div class="md:flex md:items-center md:justify-between mb-6 flex-shrink-0">
+        <div class="flex-1 min-w-0">
+            <nav class="flex mb-2" aria-label="Breadcrumb">
+                <ol class="flex items-center space-x-2">
+                    <li>
+                        <a asp-action="Index" class="text-sm font-sm text-gray-500 hover:text-gray-700">Agents</a>
+                    </li>
+                    <li>
+                        <svg class="h-5 w-5 text-gray-300" fill="currentColor" viewBox="0 0 20 20">
+                            <path d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" />
+                        </svg>
+                    </li>
+                    <li>
+                        <a asp-action="Details" asp-route-id="@Model.Id" class="text-sm font-medium text-gray-500 hover:text-gray-700">@Model.Name</a>
+                    </li>
+                </ol>
+            </nav>
+            <h2 class="text-2xl font-bold leading-7 text-gray-900 sm:text-3xl sm:truncate">
+                Testing: @Model.Name
+            </h2>
+        </div>
+        <div class="mt-4 flex md:ml-4 md:mt-0 gap-3">
+            <button onclick="clearChat()" class="inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50">
+                Clear Chat
+            </button>
+        </div>
+    </div>
+
+    <!-- Main Content Area -->
+    <div class="flex-grow flex flex-col lg:flex-row gap-6 overflow-hidden">
+        <!-- Chat Interface -->
+        <div class="flex-grow flex flex-col bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+            <!-- Messages container -->
+            <div id="chatMessages" class="flex-grow overflow-y-auto p-6 space-y-4 bg-gray-50">
+                <!-- Welcome Message -->
+                <div class="flex justify-start">
+                    <div class="max-w-[80%] rounded-lg px-4 py-3 bg-white border border-gray-200 text-gray-800 shadow-sm">
+                        <p class="text-sm">Hello! I am <strong>@Model.Name</strong>. How can I assist you today?</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Input area -->
+            <div class="p-4 bg-white border-t border-gray-200">
+                <form id="chatForm" class="flex gap-3">
+                    <input type="text" id="userInput" 
+                           class="block w-full rounded-md border-0 py-2.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-blue-600 sm:text-sm sm:leading-6" 
+                           placeholder="Type your message here..." autocomplete="off">
+                    <button type="submit" id="sendBtn" class="inline-flex items-center rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600">
+                        <span>Send</span>
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <!-- Activity Log / Event Loop -->
+        <div class="lg:w-[450px] flex-shrink-0 flex flex-col bg-gray-900 rounded-xl shadow-lg overflow-hidden border border-gray-800">
+            <div class="bg-gray-800 px-4 py-3 border-b border-gray-700 flex items-center justify-between">
+                <h3 class="text-xs font-bold uppercase tracking-wider text-gray-400">Activity Log</h3>
+                <span id="loopStatus" class="flex h-2 w-2 rounded-full bg-green-500"></span>
+            </div>
+            <div id="activityLog" class="flex-grow overflow-y-auto p-4 space-y-3 font-mono text-xs">
+                <div class="text-blue-400"># System initialized. Agent: @Model.Name</div>
+                <div class="text-gray-500"># Waiting for user input...</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3.2.6/dist/purify.min.js"></script>
+<script>
+    const agentId = @Model.Id;
+    let chatHistory = [];
+    const chatMessages = document.getElementById('chatMessages');
+    const activityLog = document.getElementById('activityLog');
+    const chatForm = document.getElementById('chatForm');
+    const userInput = document.getElementById('userInput');
+    const sendBtn = document.getElementById('sendBtn');
+    const loopStatus = document.getElementById('loopStatus');
+
+    marked.setOptions({
+        gfm: true,
+        breaks: true
+    });
+
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text ?? '';
+        return div.innerHTML;
+    }
+
+    function normalizeActivityMessage(msg, type) {
+        if (!msg) return '';
+
+        if (type === 'tool_call' || type === 'tool_result' || type === 'error' || type === 'thinking') {
+            return msg.replace(/^[^\p{L}\p{N}#]+/u, '').trim();
+        }
+
+        return msg;
+    }
+
+    function addActivity(msg, type = 'info') {
+        const div = document.createElement('div');
+        const timestamp = new Date().toLocaleTimeString([], { hour12: false });
+
+        let colorClass = 'text-gray-400';
+        let prefix = '# ';
+
+        if (type === 'tool_call') { colorClass = 'text-yellow-400'; prefix = ''; }
+        if (type === 'tool_result') { colorClass = 'text-green-400'; prefix = ''; }
+        if (type === 'error') { colorClass = 'text-red-400'; prefix = ''; }
+        if (type === 'thinking') { colorClass = 'text-blue-300 italic'; prefix = ''; }
+
+        const normalized = normalizeActivityMessage(msg, type);
+
+        div.className = colorClass;
+        div.innerHTML = `<span class="text-gray-600 font-normal">[${timestamp}]</span> ${prefix}${escapeHtml(normalized)}`;
+        activityLog.appendChild(div);
+        activityLog.scrollTop = activityLog.scrollHeight;
+    }
+
+    function addMessage(text, isUser = false) {
+        const div = document.createElement('div');
+        div.className = `flex ${isUser ? 'justify-end' : 'justify-start'}`;
+
+        const bubble = document.createElement('div');
+        bubble.className = `max-w-[80%] rounded-lg px-4 py-3 shadow-sm text-sm ${isUser ? 'bg-blue-600 text-white' : 'bg-white border border-gray-200 text-gray-800'}`;
+
+        if (isUser) {
+            bubble.innerHTML = escapeHtml(text).replace(/\n/g, '<br>');
+        } else {
+            const markdownHtml = marked.parse(text ?? '');
+            bubble.innerHTML = `<div class="markdown-body">${DOMPurify.sanitize(markdownHtml)}</div>`;
+        }
+
+        div.appendChild(bubble);
+        chatMessages.appendChild(div);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+
+    function clearChat() {
+        chatMessages.innerHTML = '';
+        activityLog.innerHTML = '<div class="text-blue-400"># History cleared.</div>';
+        chatHistory = [];
+        addActivity('Waiting for user input...');
+    }
+
+    chatForm.onsubmit = async (e) => {
+        e.preventDefault();
+        const msg = userInput.value.trim();
+        if (!msg) return;
+
+        userInput.value = '';
+        addMessage(msg, true);
+
+        userInput.disabled = true;
+        sendBtn.disabled = true;
+        sendBtn.classList.add('opacity-50');
+        loopStatus.classList.replace('bg-green-500', 'bg-blue-500');
+        loopStatus.classList.add('animate-pulse');
+
+        try {
+            const response = await fetch('/Agent/SendMessage', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    agentId: agentId,
+                    message: msg,
+                    history: chatHistory
+                })
+            });
+
+            if (!response.ok) throw new Error('Failed to send message');
+
+            const data = await response.json();
+
+            if (data.activityLog) {
+                data.activityLog.forEach(log => {
+                    addActivity(log.message, log.type);
+                });
+            }
+
+            chatHistory = data.history;
+            if (data.response) {
+                addMessage(data.response);
+            }
+
+        } catch (err) {
+            addActivity(err.message, 'error');
+            addMessage('Sorry, I encountered an error processing your request.', false);
+        } finally {
+            userInput.disabled = false;
+            sendBtn.disabled = false;
+            sendBtn.classList.remove('opacity-50');
+            loopStatus.classList.replace('bg-blue-500', 'bg-green-500');
+            loopStatus.classList.remove('animate-pulse');
+            userInput.focus();
+        }
+    };
+</script>

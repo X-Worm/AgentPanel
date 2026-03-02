@@ -1,0 +1,144 @@
+@model AgentControlPanel.Models.Agent
+
+@{
+    ViewData["Title"] = "Edit Agent";
+}
+
+<div class="px-4 py-8 max-w-3xl mx-auto">
+    <div class="md:flex md:items-center md:justify-between mb-8">
+        <div class="flex-1 min-w-0">
+            <h2 class="text-2xl font-bold leading-7 text-gray-900 sm:text-3xl sm:truncate">
+                Edit Agent
+            </h2>
+        </div>
+    </div>
+
+    <div class="bg-white shadow-sm ring-1 ring-gray-900/5 sm:rounded-xl md:col-span-2">
+        <form asp-action="Edit" class="px-4 py-6 sm:p-8">
+            <div asp-validation-summary="ModelOnly" class="text-red-500 text-sm mb-4"></div>
+            <input type="hidden" asp-for="Id" />
+            
+            <div class="grid max-w-2xl grid-cols-1 gap-x-6 gap-y-8 sm:grid-cols-6">
+                <div class="sm:col-span-4">
+                    <label asp-for="Name" class="block text-sm font-medium leading-6 text-gray-900"></label>
+                    <div class="mt-2">
+                        <input asp-for="Name" class="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-blue-600 sm:text-sm sm:leading-6 px-3" />
+                    </div>
+                    <span asp-validation-for="Name" class="text-red-500 text-xs"></span>
+                </div>
+
+                <div class="col-span-full">
+                    <label asp-for="Description" class="block text-sm font-medium leading-6 text-gray-900"></label>
+                    <div class="mt-2">
+                        <textarea asp-for="Description" rows="4" class="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-blue-600 sm:text-sm sm:leading-6 px-3"></textarea>
+                    </div>
+                    <span asp-validation-for="Description" class="text-red-500 text-xs"></span>
+                </div>
+
+                <div class="col-span-full">
+                    <div class="flex items-center justify-between">
+                        <label asp-for="SystemPrompt" class="block text-sm font-medium leading-6 text-gray-900"></label>
+                        <button type="button" id="btnGeneratePrompt" class="inline-flex items-center text-sm font-medium text-indigo-600 hover:text-indigo-500 transition-colors">
+                            <svg class="mr-1.5 w-4 h-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" />
+                            </svg>
+                            Generate with AI
+                        </button>
+                    </div>
+                    <div class="mt-2 relative">
+                        <textarea asp-for="SystemPrompt" id="SystemPrompt" rows="5" class="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-blue-600 sm:text-sm sm:leading-6 px-3 font-mono"></textarea>
+                        
+                        <!-- Loading overlay -->
+                        <div id="promptLoading" class="absolute inset-0 bg-white/80 hidden items-center justify-center rounded-md">
+                            <div class="flex items-center text-indigo-600 gap-2">
+                                <svg class="animate-spin h-5 w-5" viewBox="0 0 24 24" fill="none">
+                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                                <span class="text-sm font-medium">Generating...</span>
+                            </div>
+                        </div>
+                    </div>
+                    <span asp-validation-for="SystemPrompt" class="text-red-500 text-xs"></span>
+                    <p id="promptStatusMsg" class="mt-2 text-sm text-red-600 hidden"></p>
+                </div>
+                
+                <!-- Skills Selection -->
+                <div class="col-span-full border-t border-gray-900/10 pt-6 mt-2">
+                    <h3 class="text-sm font-medium leading-6 text-gray-900">Assign Skills</h3>
+                    <p class="mt-1 text-sm text-gray-500">Select the functional skills this agent can use.</p>
+                    
+                    <div class="mt-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                        @if (ViewBag.Skills != null)
+                        {
+                            foreach (var skill in ViewBag.Skills)
+                            {
+                                bool isSelected = Model.Skills != null && Model.Skills.Any(s => s.Id == skill.Id);
+                                <div class="relative flex items-start p-4 border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer transition-colors">
+                                    <div class="flex h-6 items-center">
+                                        <input id="skill_@skill.Id" name="selectedSkills" value="@skill.Id" type="checkbox" @(isSelected ? "checked" : "") class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600 cursor-pointer">
+                                    </div>
+                                    <div class="ml-3 text-sm leading-6 flex-1">
+                                        <label for="skill_@skill.Id" class="font-medium text-gray-900 cursor-pointer block">@skill.Name</label>
+                                        @if(skill.IsAIGenerated) {
+                                            <p class="text-xs text-indigo-600 mt-0.5">AI Generated</p>
+                                        }
+                                    </div>
+                                </div>
+                            }
+                        }
+                    </div>
+                </div>
+            </div>
+            
+            <div class="mt-8 flex items-center justify-end gap-x-6 border-t border-gray-900/10 pt-6">
+                <a asp-action="Index" class="text-sm font-semibold leading-6 text-gray-900 hover:text-gray-700">Cancel</a>
+                <button type="submit" class="rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600">Save Changes</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        document.getElementById('btnGeneratePrompt')?.addEventListener('click', async () => {
+            const name = document.getElementById('Name').value.trim();
+            const description = document.getElementById('Description').value.trim();
+            const msg = document.getElementById('promptStatusMsg');
+            const overlay = document.getElementById('promptLoading');
+            
+            if (!name) {
+                msg.textContent = "Please provide an Agent Name first.";
+                msg.classList.remove('hidden');
+                return;
+            }
+            
+            msg.classList.add('hidden');
+            overlay.classList.remove('hidden');
+            overlay.classList.add('flex');
+            
+            try {
+                const response = await fetch('/Agent/GenerateSystemPrompt', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, description })
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    document.getElementById('SystemPrompt').value = data.prompt;
+                } else {
+                    const text = await response.text();
+                    msg.textContent = "Error: " + text;
+                    msg.classList.remove('hidden');
+                }
+            } catch (error) {
+                msg.textContent = "Network error while generating prompt.";
+                msg.classList.remove('hidden');
+            } finally {
+                overlay.classList.add('hidden');
+                overlay.classList.remove('flex');
+            }
+        });
+    </script>
+}
