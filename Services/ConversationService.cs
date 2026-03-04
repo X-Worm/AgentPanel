@@ -30,6 +30,8 @@ public class ActivityLogEntry
 
 public class ConversationService : IConversationService
 {
+    private const string ReadSkillToolName = "read_skill";
+
     private readonly IBedrockService _bedrockService;
     private readonly ISkillParser _skillParser;
     private readonly ILogger<ConversationService> _logger;
@@ -55,31 +57,19 @@ public class ConversationService : IConversationService
         });
 
         var systemPrompt = BuildSystemPrompt(agent);
-        var tools = MapScriptsToTools(agent.Skills);
+        var tools = BuildTools(agent.Skills);
 
         foreach (var skill in agent.Skills)
         {
-            var scripts = DeserializeScripts(skill.ScriptsJson);
-            if (scripts.Any())
+            response.ActivityLog.Add(new ActivityLogEntry
             {
-                response.ActivityLog.Add(new ActivityLogEntry
-                {
-                    Type = "info",
-                    Message = $"Skill loaded: {skill.Name} ({scripts.Count} script tool(s) registered)"
-                });
-            }
-            else
-            {
-                response.ActivityLog.Add(new ActivityLogEntry
-                {
-                    Type = "info",
-                    Message = $"Skill loaded: {skill.Name} (instruction-only, injected into system prompt)"
-                });
-            }
+                Type = "info",
+                Message = $"Skill discovered: {skill.Name} (metadata loaded, full content available via read_skill)"
+            });
         }
 
         bool continueLoop = true;
-        int maxIterations = 5;
+        int maxIterations = 10;
         int currentIteration = 0;
 
         while (continueLoop && currentIteration < maxIterations)
@@ -88,7 +78,7 @@ public class ConversationService : IConversationService
             _logger.LogDebug(
                 "Conversation loop iteration {Iteration}/{MaxIterations}. HistoryCount={HistoryCount}",
                 currentIteration, maxIterations, history.Count);
-            response.ActivityLog.Add(new ActivityLogEntry { Message = "Claude is thinking..." });
+            response.ActivityLog.Add(new ActivityLogEntry { Message = $"[Iteration {currentIteration}/{maxIterations}] Claude is thinking..." });
 
             var bedrockResponse = await _bedrockService.ConverseAsync(history, systemPrompt, tools);
             var assistantMessage = bedrockResponse.Output.Message;
@@ -116,9 +106,6 @@ public class ConversationService : IConversationService
                     var toolUse = call.ToolUse;
                     object? standardInput = ConvertDocumentToStandard(toolUse.Input);
                     string inputJson = standardInput != null ? JsonSerializer.Serialize(standardInput) : "{}";
-                    _logger.LogInformation(
-                        "Executing tool call. ToolName={ToolName}, ToolUseId={ToolUseId}, InputJsonLength={InputJsonLength}",
-                        toolUse.Name, toolUse.ToolUseId, inputJson.Length);
 
                     response.ActivityLog.Add(new ActivityLogEntry
                     {
@@ -126,9 +113,9 @@ public class ConversationService : IConversationService
                         Message = $"Tool Call: {toolUse.Name} with args: {inputJson}"
                     });
 
-                    var (result, status) = await ExecuteSkillScriptAsync(agent, toolUse.Name, inputJson);
+                    var (result, status) = await HandleToolCallAsync(agent, toolUse.Name, inputJson, response);
                     _logger.LogInformation(
-                        "Tool execution finished. ToolName={ToolName}, ToolUseId={ToolUseId}, Status={Status}, ResultLength={ResultLength}",
+                        "Tool call handled. ToolName={ToolName}, ToolUseId={ToolUseId}, Status={Status}, ResultLength={ResultLength}",
                         toolUse.Name, toolUse.ToolUseId, status, result.Length);
 
                     response.ActivityLog.Add(new ActivityLogEntry
@@ -155,9 +142,6 @@ public class ConversationService : IConversationService
                     Role = ConversationRole.User,
                     Content = toolResultBlocks
                 });
-                _logger.LogDebug(
-                    "Added tool result message to history. ToolResultBlocks={ToolResultBlocks}, HistoryCount={HistoryCount}",
-                    toolResultBlocks.Count, history.Count);
             }
         }
 
@@ -169,9 +153,9 @@ public class ConversationService : IConversationService
     }
 
     /// <summary>
-    /// Builds the full system prompt by combining the agent's own system prompt
-    /// with skill instructions extracted from SKILL.md bodies (progressive disclosure).
-    /// This ensures Claude actually reads and understands the skill instructions.
+    /// Phase 1 (Discovery): Builds the system prompt with only skill metadata
+    /// (~100 tokens per skill) using the XML format recommended by agentskills.io.
+    /// Claude reads full skill content on demand via the read_skill tool.
     /// </summary>
     private string BuildSystemPrompt(Agent agent)
     {
@@ -184,79 +168,83 @@ public class ConversationService : IConversationService
             return sb.ToString();
 
         sb.AppendLine();
-        sb.AppendLine("## Available Skills");
+        sb.AppendLine(@"You have skills available. To use a skill, first call the `read_skill` tool with the skill name to load its full instructions and understand its capabilities. Only then proceed to use its script tools if available.");
         sb.AppendLine();
-        sb.AppendLine("You have the following skills available. Some skills provide executable scripts you can call as tools. Others are instruction-only and provide knowledge and guidelines you should follow when relevant.");
-        sb.AppendLine();
+        sb.AppendLine("<available_skills>");
 
         foreach (var skill in agent.Skills)
         {
             var parseResult = _skillParser.Parse(skill.SkillMd);
+            var name = parseResult.IsValid ? parseResult.Frontmatter.Name : skill.Name;
+            var description = parseResult.IsValid ? parseResult.Frontmatter.Description : skill.Name;
 
-            if (!parseResult.IsValid)
-            {
-                _logger.LogWarning(
-                    "Skill '{SkillName}' (Id={SkillId}) has invalid SKILL.md: {Errors}",
-                    skill.Name, skill.Id, string.Join("; ", parseResult.Errors));
-                sb.AppendLine($"### Skill: {skill.Name}");
-                sb.AppendLine();
-                sb.AppendLine("*This skill has configuration issues and may not work correctly.*");
-                sb.AppendLine();
-
-                if (!string.IsNullOrWhiteSpace(parseResult.Body))
-                    sb.AppendLine(parseResult.Body);
-
-                sb.AppendLine();
-                continue;
-            }
-
-            sb.AppendLine($"### Skill: {parseResult.Frontmatter.Name}");
-            sb.AppendLine();
-            sb.AppendLine($"**Description:** {parseResult.Frontmatter.Description}");
-            sb.AppendLine();
-
-            if (!string.IsNullOrWhiteSpace(parseResult.Body))
-            {
-                sb.AppendLine(parseResult.Body);
-                sb.AppendLine();
-            }
-
-            var scripts = DeserializeScripts(skill.ScriptsJson);
-            if (scripts.Any())
-            {
-                sb.AppendLine("**Available script tools for this skill:**");
-                var toolPrefix = _skillParser.SanitizeNameForToolUse(parseResult.Frontmatter.Name);
-                foreach (var script in scripts)
-                {
-                    var scriptToolName = $"{toolPrefix}__{SanitizeScriptName(script.Name)}";
-                    sb.AppendLine($"- `{scriptToolName}`: {script.Name} ({script.Language})");
-
-                    if (script.Parameters.Any())
-                    {
-                        foreach (var p in script.Parameters)
-                        {
-                            var reqLabel = p.Required ? "required" : "optional";
-                            sb.AppendLine($"  - `{p.Name}` ({p.Type}, {reqLabel}): {p.Description}");
-                        }
-                    }
-                }
-                sb.AppendLine();
-            }
-            else
-            {
-                sb.AppendLine("*This is an instruction-only skill with no executable scripts. Follow the instructions above when relevant.*");
-                sb.AppendLine();
-            }
+            sb.AppendLine("  <skill>");
+            sb.AppendLine($"    <name>{EscapeXml(name)}</name>");
+            sb.AppendLine($"    <description>{EscapeXml(description)}</description>");
+            sb.AppendLine("  </skill>");
         }
 
+        sb.AppendLine("</available_skills>");
         return sb.ToString();
     }
 
     /// <summary>
+    /// Builds all tools: the read_skill tool for progressive disclosure,
+    /// plus individual script tools for each skill's scripts.
+    /// </summary>
+    private List<Tool> BuildTools(List<Skill> skills)
+    {
+        var tools = new List<Tool>();
+
+        if (skills.Any())
+        {
+            tools.Add(BuildReadSkillTool(skills));
+        }
+
+        tools.AddRange(MapScriptsToTools(skills));
+        return tools;
+    }
+
+    /// <summary>
+    /// Creates the read_skill tool that lets Claude load full SKILL.md content
+    /// on demand (Phase 2 - Activation per agentskills.io spec).
+    /// </summary>
+    private Tool BuildReadSkillTool(List<Skill> skills)
+    {
+        var skillNames = skills.Select(s =>
+        {
+            var parseResult = _skillParser.Parse(s.SkillMd);
+            return parseResult.IsValid ? parseResult.Frontmatter.Name : s.Name;
+        }).ToList();
+
+        return new Tool
+        {
+            ToolSpec = new ToolSpecification
+            {
+                Name = ReadSkillToolName,
+                Description = $"Load the full SKILL.md instructions for a skill. Call this before using a skill to understand its capabilities, workflows, and available script tools. Available skills: {string.Join(", ", skillNames)}",
+                InputSchema = new ToolInputSchema
+                {
+                    Json = Document.FromObject(new
+                    {
+                        type = "object",
+                        properties = new Dictionary<string, object>
+                        {
+                            ["skill_name"] = new
+                            {
+                                type = "string",
+                                description = $"The name of the skill to read. One of: {string.Join(", ", skillNames)}"
+                            }
+                        },
+                        required = new[] { "skill_name" }
+                    })
+                }
+            }
+        };
+    }
+
+    /// <summary>
     /// Maps each script within each skill to a Bedrock Tool definition.
-    /// Tool name format: {sanitized_skill_name}__{sanitized_script_name}
-    /// Parameters come from the script's Parameters list, with a fallback
-    /// generic "input" parameter for backward compatibility.
     /// </summary>
     private List<Tool> MapScriptsToTools(List<Skill> skills)
     {
@@ -276,7 +264,7 @@ public class ConversationService : IConversationService
             var scripts = DeserializeScripts(skill.ScriptsJson);
             if (!scripts.Any())
             {
-                _logger.LogDebug("Skill '{SkillName}' (Id={SkillId}) is instruction-only (no scripts). Its instructions are included in the system prompt.", skill.Name, skill.Id);
+                _logger.LogDebug("Skill '{SkillName}' (Id={SkillId}) is instruction-only (no scripts).", skill.Name, skill.Id);
                 continue;
             }
 
@@ -342,13 +330,104 @@ public class ConversationService : IConversationService
             }
         }
 
-        _logger.LogDebug("Mapped scripts to tools. SkillsCount={SkillsCount}, ToolsCount={ToolsCount}", skills.Count, tools.Count);
         return tools;
     }
 
     /// <summary>
-    /// Finds and executes the correct script by matching the Bedrock tool name
-    /// back to skill + script. Returns the output and result status.
+    /// Routes tool calls to either read_skill (returns SKILL.md content)
+    /// or script execution.
+    /// </summary>
+    private async Task<(string Result, ToolResultStatus Status)> HandleToolCallAsync(
+        Agent agent, string toolName, string inputJson, ConversationResponse response)
+    {
+        if (toolName == ReadSkillToolName)
+            return HandleReadSkill(agent, inputJson, response);
+
+        return await ExecuteSkillScriptAsync(agent, toolName, inputJson);
+    }
+
+    /// <summary>
+    /// Phase 2 (Activation): Returns the full SKILL.md body + script tool listing
+    /// when Claude calls read_skill. This is the progressive disclosure step.
+    /// </summary>
+    private (string Result, ToolResultStatus Status) HandleReadSkill(
+        Agent agent, string inputJson, ConversationResponse response)
+    {
+        string requestedName;
+        try
+        {
+            var doc = JsonDocument.Parse(inputJson);
+            requestedName = doc.RootElement.GetProperty("skill_name").GetString() ?? "";
+        }
+        catch
+        {
+            return ("Error: 'skill_name' parameter is required.", ToolResultStatus.Error);
+        }
+
+        foreach (var skill in agent.Skills)
+        {
+            var parseResult = _skillParser.Parse(skill.SkillMd);
+            var name = parseResult.IsValid ? parseResult.Frontmatter.Name : skill.Name;
+
+            if (!string.Equals(name, requestedName, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            _logger.LogInformation("Skill activated via read_skill: '{SkillName}' (Id={SkillId})", skill.Name, skill.Id);
+
+            response.ActivityLog.Add(new ActivityLogEntry
+            {
+                Type = "info",
+                Message = $"Skill activated: {name} (full SKILL.md loaded)"
+            });
+
+            var sb = new StringBuilder();
+
+            if (parseResult.IsValid && !string.IsNullOrWhiteSpace(parseResult.Body))
+            {
+                sb.AppendLine(parseResult.Body);
+            }
+            else if (!string.IsNullOrWhiteSpace(skill.SkillMd))
+            {
+                sb.AppendLine(skill.SkillMd);
+            }
+
+            var scripts = DeserializeScripts(skill.ScriptsJson);
+            if (scripts.Any())
+            {
+                sb.AppendLine();
+                sb.AppendLine("## Available script tools");
+                sb.AppendLine();
+                var toolPrefix = parseResult.IsValid
+                    ? _skillParser.SanitizeNameForToolUse(parseResult.Frontmatter.Name)
+                    : SanitizeLegacyName(skill.Name);
+
+                foreach (var script in scripts)
+                {
+                    var scriptToolName = $"{toolPrefix}__{SanitizeScriptName(script.Name)}";
+                    sb.AppendLine($"- `{scriptToolName}`: {script.Name} ({script.Language})");
+
+                    foreach (var p in script.Parameters)
+                    {
+                        var reqLabel = p.Required ? "required" : "optional";
+                        sb.AppendLine($"  - `{p.Name}` ({p.Type}, {reqLabel}): {p.Description}");
+                    }
+                }
+            }
+
+            return (sb.ToString(), ToolResultStatus.Success);
+        }
+
+        var availableNames = agent.Skills.Select(s =>
+        {
+            var pr = _skillParser.Parse(s.SkillMd);
+            return pr.IsValid ? pr.Frontmatter.Name : s.Name;
+        });
+        return ($"Error: Skill '{requestedName}' not found. Available skills: {string.Join(", ", availableNames)}", ToolResultStatus.Error);
+    }
+
+    /// <summary>
+    /// Phase 3 (Execution): Finds and executes the correct script by matching
+    /// the Bedrock tool name back to skill + script.
     /// </summary>
     private async Task<(string Result, ToolResultStatus Status)> ExecuteSkillScriptAsync(Agent agent, string toolName, string inputJson)
     {
@@ -444,6 +523,15 @@ public class ConversationService : IConversationService
             _logger.LogError(ex, "Failed to deserialize ScriptsJson.");
             return new List<AgentSkillScript>();
         }
+    }
+
+    private static string EscapeXml(string text)
+    {
+        return text
+            .Replace("&", "&amp;")
+            .Replace("<", "&lt;")
+            .Replace(">", "&gt;")
+            .Replace("\"", "&quot;");
     }
 
     private static string SanitizeScriptName(string scriptName)

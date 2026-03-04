@@ -43,13 +43,43 @@
         }
 
         .markdown-body p {
-            margin: 10px !important;
+            margin: 0.5rem 0;
+        }
+
+        .markdown-body ul, .markdown-body ol {
+            margin: 0.5rem 0;
+            padding-left: 1.5rem;
+        }
+
+        .markdown-body li {
+            margin: 0.25rem 0;
+        }
+
+        .markdown-body h1, .markdown-body h2, .markdown-body h3,
+        .markdown-body h4, .markdown-body h5, .markdown-body h6 {
+            margin: 0.75rem 0 0.25rem 0;
+            font-weight: 600;
+        }
+
+        .markdown-body blockquote {
+            border-left: 3px solid #d1d5db;
+            padding-left: 0.75rem;
+            margin: 0.5rem 0;
+            color: #6b7280;
         }
 
         .markdown-body pre code {
             background: transparent;
             padding: 0;
             color: inherit;
+        }
+
+        .markdown-body > *:first-child {
+            margin-top: 0;
+        }
+
+        .markdown-body > *:last-child {
+            margin-bottom: 0;
         }
     </style>
     <!-- Header -->
@@ -156,12 +186,22 @@
     }
 
     function addActivity(msg, type = 'info') {
-        const div = document.createElement('div');
         const timestamp = new Date().toLocaleTimeString([], { hour12: false });
+
+        if (type === 'separator') {
+            const hr = document.createElement('div');
+            hr.className = 'border-t border-gray-700 my-2';
+            activityLog.appendChild(hr);
+            activityLog.scrollTop = activityLog.scrollHeight;
+            return;
+        }
+
+        const div = document.createElement('div');
 
         let colorClass = 'text-gray-400';
         let prefix = '# ';
 
+        if (type === 'request') { colorClass = 'text-cyan-400 font-bold'; prefix = '> '; }
         if (type === 'tool_call') { colorClass = 'text-yellow-400'; prefix = ''; }
         if (type === 'tool_result') { colorClass = 'text-green-400'; prefix = ''; }
         if (type === 'error') { colorClass = 'text-red-400'; prefix = ''; }
@@ -214,6 +254,9 @@
         sendBtn.classList.add('opacity-50');
         loopStatus.classList.replace('bg-green-500', 'bg-blue-500');
         loopStatus.classList.add('animate-pulse');
+
+        addActivity('', 'separator');
+        addActivity(`New request: "${msg.length > 60 ? msg.substring(0, 57) + '...' : msg}"`, 'request');
 
         try {
             const response = await fetch('/Agent/SendMessage', {
