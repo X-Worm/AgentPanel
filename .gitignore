@@ -369,3 +369,6 @@ FodyWeavers.xsd
 appsettings.Local.json
 # Playwright MCP debug artifacts
 .playwright-mcp/
+
+# Build artifacts / archives
+*.zip
