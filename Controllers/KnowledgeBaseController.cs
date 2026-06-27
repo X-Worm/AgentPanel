@@ -1,62 +1,59 @@
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using AgentControlPanel.Data;
+using Microsoft.AspNetCore.RateLimiting;
 using AgentControlPanel.Models;
+using AgentControlPanel.Services;
 
 namespace AgentControlPanel.Controllers;
 
 public class KnowledgeBaseController : Controller
 {
-    private readonly AppDbContext _context;
+    private readonly IKnowledgeBaseService _kb;
+    private readonly ILogger<KnowledgeBaseController> _logger;
 
-    public KnowledgeBaseController(AppDbContext context)
+    public KnowledgeBaseController(IKnowledgeBaseService kb, ILogger<KnowledgeBaseController> logger)
     {
-        _context = context;
+        _kb = kb;
+        _logger = logger;
     }
 
     // GET: KnowledgeBase
     public async Task<IActionResult> Index()
     {
-        return View(await _context.KnowledgeBases.ToListAsync());
+        var docs = await _kb.ListAsync();
+        return View(docs);
     }
 
     // GET: KnowledgeBase/Create
-    public IActionResult Create()
-    {
-        return View();
-    }
+    public IActionResult Create() => View(new KnowledgeDocument());
 
     // POST: KnowledgeBase/Create
     [HttpPost]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> Create([Bind("Id,Name,QdrantCollectionName")] KnowledgeBase knowledgeBase)
+    [EnableRateLimiting("llm")]
+    public async Task<IActionResult> Create([Bind("Title,Content")] KnowledgeDocument doc)
     {
-        if (ModelState.IsValid)
+        if (!ModelState.IsValid) return View(doc);
+
+        try
         {
-            _context.Add(knowledgeBase);
-            await _context.SaveChangesAsync();
+            await _kb.AddAsync(doc.Title, doc.Content);
             return RedirectToAction(nameof(Index));
         }
-        return View(knowledgeBase);
-    }
-
-    // GET: KnowledgeBase/Delete/5
-    public async Task<IActionResult> Delete(int? id)
-    {
-        if (id == null) return NotFound();
-        var kb = await _context.KnowledgeBases.FirstOrDefaultAsync(m => m.Id == id);
-        if (kb == null) return NotFound();
-        return View(kb);
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to add knowledge document.");
+            // Surfaces "Voyage API key not configured" and other embedding errors.
+            ModelState.AddModelError(string.Empty, ex.Message);
+            return View(doc);
+        }
     }
 
     // POST: KnowledgeBase/Delete/5
-    [HttpPost, ActionName("Delete")]
+    [HttpPost]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> DeleteConfirmed(int id)
+    public async Task<IActionResult> Delete(int id)
     {
-        var kb = await _context.KnowledgeBases.FindAsync(id);
-        if (kb != null) _context.KnowledgeBases.Remove(kb);
-        await _context.SaveChangesAsync();
+        await _kb.DeleteAsync(id);
         return RedirectToAction(nameof(Index));
     }
 }

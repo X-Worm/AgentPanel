@@ -1,22 +1,20 @@
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using Amazon.BedrockRuntime;
-using Amazon.BedrockRuntime.Model;
 using AgentControlPanel.Models;
+using AgentControlPanel.Services.Llm;
 using System.Diagnostics;
-using Amazon.Runtime.Documents;
 
 namespace AgentControlPanel.Services;
 
 public interface IConversationService
 {
-    Task<ConversationResponse> ProcessMessageAsync(Agent agent, List<Message> history, string userMessage);
+    Task<ConversationResponse> ProcessMessageAsync(Agent agent, List<LlmMessage> history, string userMessage);
 }
 
 public class ConversationResponse
 {
-    public List<Message> UpdatedHistory { get; set; } = new();
+    public List<LlmMessage> UpdatedHistory { get; set; } = new();
     public List<ActivityLogEntry> ActivityLog { get; set; } = new();
     public string FinalResponse { get; set; } = string.Empty;
 }
@@ -31,33 +29,45 @@ public class ActivityLogEntry
 public class ConversationService : IConversationService
 {
     private const string ReadSkillToolName = "read_skill";
+    private const string SearchKnowledgeBaseToolName = "search_knowledge_base";
 
-    private readonly IBedrockService _bedrockService;
+    private readonly ILlmProvider _llm;
+    private readonly LlmOptions _llmOptions;
     private readonly ISkillParser _skillParser;
+    private readonly IKnowledgeBaseService _knowledgeBase;
     private readonly ILogger<ConversationService> _logger;
 
-    public ConversationService(IBedrockService bedrockService, ISkillParser skillParser, ILogger<ConversationService> logger)
+    public ConversationService(
+        ILlmProvider llm,
+        LlmOptions llmOptions,
+        ISkillParser skillParser,
+        IKnowledgeBaseService knowledgeBase,
+        ILogger<ConversationService> logger)
     {
-        _bedrockService = bedrockService;
+        _llm = llm;
+        _llmOptions = llmOptions;
         _skillParser = skillParser;
+        _knowledgeBase = knowledgeBase;
         _logger = logger;
     }
 
-    public async Task<ConversationResponse> ProcessMessageAsync(Agent agent, List<Message> history, string userMessage)
+    public async Task<ConversationResponse> ProcessMessageAsync(Agent agent, List<LlmMessage> history, string userMessage)
     {
         var response = new ConversationResponse();
-        _logger.LogInformation(
-            "ProcessMessageAsync start. AgentId={AgentId}, AgentName={AgentName}, IncomingHistoryCount={HistoryCount}, UserMessageLength={MessageLength}",
-            agent.Id, agent.Name, history.Count, userMessage?.Length ?? 0);
+        var modelId = _llmOptions.ResolveModel(agent.Model);
 
-        history.Add(new Message
+        _logger.LogInformation(
+            "ProcessMessageAsync start. AgentId={AgentId}, AgentName={AgentName}, Model={Model}, Provider={Provider}, IncomingHistoryCount={HistoryCount}, UserMessageLength={MessageLength}",
+            agent.Id, agent.Name, modelId, _llm.ProviderName, history.Count, userMessage?.Length ?? 0);
+
+        history.Add(new LlmMessage
         {
-            Role = ConversationRole.User,
-            Content = new List<ContentBlock> { new ContentBlock { Text = userMessage } }
+            Role = LlmRole.User,
+            Content = new List<LlmContentBlock> { new() { Text = userMessage } }
         });
 
         var systemPrompt = BuildSystemPrompt(agent);
-        var tools = BuildTools(agent.Skills);
+        var tools = BuildTools(agent);
 
         foreach (var skill in agent.Skills)
         {
@@ -80,32 +90,30 @@ public class ConversationService : IConversationService
                 currentIteration, maxIterations, history.Count);
             response.ActivityLog.Add(new ActivityLogEntry { Message = $"[Iteration {currentIteration}/{maxIterations}] Claude is thinking..." });
 
-            var bedrockResponse = await _bedrockService.ConverseAsync(history, systemPrompt, tools);
-            var assistantMessage = bedrockResponse.Output.Message;
-            history.Add(assistantMessage);
-            _logger.LogDebug("Received assistant message. ContentBlocks={ContentBlocks}", assistantMessage.Content?.Count ?? 0);
+            var llmResponse = await _llm.ConverseAsync(modelId, history, systemPrompt, tools);
 
-            var toolCalls = (assistantMessage.Content ?? new List<ContentBlock>())
-                .Where(c => c.ToolUse != null)
-                .ToList();
+            var assistantMessage = new LlmMessage { Role = LlmRole.Assistant, Content = llmResponse.Content };
+            history.Add(assistantMessage);
+            _logger.LogDebug("Received assistant message. ContentBlocks={ContentBlocks}", assistantMessage.Content.Count);
+
+            var toolCalls = assistantMessage.Content.Where(c => c.ToolUse != null).ToList();
             _logger.LogDebug("Assistant tool calls detected: {ToolCallCount}", toolCalls.Count);
 
             if (!toolCalls.Any())
             {
-                response.FinalResponse = (assistantMessage.Content ?? new List<ContentBlock>())
+                response.FinalResponse = assistantMessage.Content
                     .FirstOrDefault(c => !string.IsNullOrEmpty(c.Text))?.Text ?? "";
                 _logger.LogInformation("Conversation finished. FinalResponseLength={ResponseLength}", response.FinalResponse.Length);
                 continueLoop = false;
             }
             else
             {
-                var toolResultBlocks = new List<ContentBlock>();
+                var toolResultBlocks = new List<LlmContentBlock>();
 
                 foreach (var call in toolCalls)
                 {
-                    var toolUse = call.ToolUse;
-                    object? standardInput = ConvertDocumentToStandard(toolUse.Input);
-                    string inputJson = standardInput != null ? JsonSerializer.Serialize(standardInput) : "{}";
+                    var toolUse = call.ToolUse!;
+                    var inputJson = string.IsNullOrWhiteSpace(toolUse.InputJson) ? "{}" : toolUse.InputJson;
 
                     response.ActivityLog.Add(new ActivityLogEntry
                     {
@@ -113,33 +121,33 @@ public class ConversationService : IConversationService
                         Message = $"Tool Call: {toolUse.Name} with args: {inputJson}"
                     });
 
-                    var (result, status) = await HandleToolCallAsync(agent, toolUse.Name, inputJson, response);
+                    var (result, isError) = await HandleToolCallAsync(agent, toolUse.Name, inputJson, response);
                     _logger.LogInformation(
-                        "Tool call handled. ToolName={ToolName}, ToolUseId={ToolUseId}, Status={Status}, ResultLength={ResultLength}",
-                        toolUse.Name, toolUse.ToolUseId, status, result.Length);
+                        "Tool call handled. ToolName={ToolName}, ToolUseId={ToolUseId}, IsError={IsError}, ResultLength={ResultLength}",
+                        toolUse.Name, toolUse.Id, isError, result.Length);
 
                     response.ActivityLog.Add(new ActivityLogEntry
                     {
-                        Type = status == ToolResultStatus.Success ? "tool_result" : "error",
-                        Message = status == ToolResultStatus.Success
-                            ? $"Tool Result received ({result.Length} chars)"
-                            : $"Tool Error: {result}"
+                        Type = isError ? "error" : "tool_result",
+                        Message = isError
+                            ? $"Tool Error: {result}"
+                            : $"Tool Result received ({result.Length} chars)"
                     });
 
-                    toolResultBlocks.Add(new ContentBlock
+                    toolResultBlocks.Add(new LlmContentBlock
                     {
-                        ToolResult = new ToolResultBlock
+                        ToolResult = new LlmToolResult
                         {
-                            ToolUseId = toolUse.ToolUseId,
-                            Content = new List<ToolResultContentBlock> { new ToolResultContentBlock { Text = result } },
-                            Status = status
+                            ToolUseId = toolUse.Id,
+                            Text = result,
+                            IsError = isError
                         }
                     });
                 }
 
-                history.Add(new Message
+                history.Add(new LlmMessage
                 {
-                    Role = ConversationRole.User,
+                    Role = LlmRole.User,
                     Content = toolResultBlocks
                 });
             }
@@ -189,13 +197,20 @@ public class ConversationService : IConversationService
     }
 
     /// <summary>
-    /// Builds all tools: the read_skill tool for progressive disclosure,
-    /// plus individual script tools for each skill's scripts.
+    /// Builds all tools: the built-in search_knowledge_base tool (when the agent
+    /// has knowledge base access enabled), the read_skill tool for progressive
+    /// disclosure, plus individual script tools for each skill's scripts.
     /// </summary>
-    private List<Tool> BuildTools(List<Skill> skills)
+    private List<LlmTool> BuildTools(Agent agent)
     {
-        var tools = new List<Tool>();
+        var tools = new List<LlmTool>();
 
+        if (agent.KnowledgeBaseEnabled)
+        {
+            tools.Add(BuildSearchKnowledgeBaseTool());
+        }
+
+        var skills = agent.Skills;
         if (skills.Any())
         {
             tools.Add(BuildReadSkillTool(skills));
@@ -206,10 +221,35 @@ public class ConversationService : IConversationService
     }
 
     /// <summary>
+    /// The built-in knowledge base retrieval tool. Handled natively in C#
+    /// (embed query + pgvector similarity search), independent of the
+    /// skill/script execution path.
+    /// </summary>
+    private static LlmTool BuildSearchKnowledgeBaseTool() => new()
+    {
+        Name = SearchKnowledgeBaseToolName,
+        Description = "Search the knowledge base for relevant documented information. Use this whenever the user asks about stored knowledge, internal policies, or facts that may have been added to the knowledge base.",
+        Properties = new Dictionary<string, object>
+        {
+            ["query"] = new
+            {
+                type = "string",
+                description = "What to search the knowledge base for."
+            },
+            ["max_results"] = new
+            {
+                type = "number",
+                description = "Maximum number of entries to return (default 5)."
+            }
+        },
+        Required = new List<string> { "query" }
+    };
+
+    /// <summary>
     /// Creates the read_skill tool that lets Claude load full SKILL.md content
     /// on demand (Phase 2 - Activation per agentskills.io spec).
     /// </summary>
-    private Tool BuildReadSkillTool(List<Skill> skills)
+    private LlmTool BuildReadSkillTool(List<Skill> skills)
     {
         var skillNames = skills.Select(s =>
         {
@@ -217,38 +257,28 @@ public class ConversationService : IConversationService
             return parseResult.IsValid ? parseResult.Frontmatter.Name : s.Name;
         }).ToList();
 
-        return new Tool
+        return new LlmTool
         {
-            ToolSpec = new ToolSpecification
+            Name = ReadSkillToolName,
+            Description = $"Load the full SKILL.md instructions for a skill. Call this before using a skill to understand its capabilities, workflows, and available script tools. Available skills: {string.Join(", ", skillNames)}",
+            Properties = new Dictionary<string, object>
             {
-                Name = ReadSkillToolName,
-                Description = $"Load the full SKILL.md instructions for a skill. Call this before using a skill to understand its capabilities, workflows, and available script tools. Available skills: {string.Join(", ", skillNames)}",
-                InputSchema = new ToolInputSchema
+                ["skill_name"] = new
                 {
-                    Json = Document.FromObject(new
-                    {
-                        type = "object",
-                        properties = new Dictionary<string, object>
-                        {
-                            ["skill_name"] = new
-                            {
-                                type = "string",
-                                description = $"The name of the skill to read. One of: {string.Join(", ", skillNames)}"
-                            }
-                        },
-                        required = new[] { "skill_name" }
-                    })
+                    type = "string",
+                    description = $"The name of the skill to read. One of: {string.Join(", ", skillNames)}"
                 }
-            }
+            },
+            Required = new List<string> { "skill_name" }
         };
     }
 
     /// <summary>
-    /// Maps each script within each skill to a Bedrock Tool definition.
+    /// Maps each script within each skill to a tool definition.
     /// </summary>
-    private List<Tool> MapScriptsToTools(List<Skill> skills)
+    private List<LlmTool> MapScriptsToTools(List<Skill> skills)
     {
-        var tools = new List<Tool>();
+        var tools = new List<LlmTool>();
 
         foreach (var skill in skills)
         {
@@ -302,22 +332,12 @@ public class ConversationService : IConversationService
                         };
                     }
 
-                    tools.Add(new Tool
+                    tools.Add(new LlmTool
                     {
-                        ToolSpec = new ToolSpecification
-                        {
-                            Name = toolName,
-                            Description = toolDescription,
-                            InputSchema = new ToolInputSchema
-                            {
-                                Json = Document.FromObject(new
-                                {
-                                    type = "object",
-                                    properties = properties,
-                                    required = requiredFields
-                                })
-                            }
-                        }
+                        Name = toolName,
+                        Description = toolDescription,
+                        Properties = properties,
+                        Required = requiredFields
                     });
 
                     _logger.LogDebug("Mapped script to tool: {ToolName} from skill '{SkillName}'", toolName, skill.Name);
@@ -337,9 +357,12 @@ public class ConversationService : IConversationService
     /// Routes tool calls to either read_skill (returns SKILL.md content)
     /// or script execution.
     /// </summary>
-    private async Task<(string Result, ToolResultStatus Status)> HandleToolCallAsync(
+    private async Task<(string Result, bool IsError)> HandleToolCallAsync(
         Agent agent, string toolName, string inputJson, ConversationResponse response)
     {
+        if (toolName == SearchKnowledgeBaseToolName)
+            return await HandleSearchKnowledgeBaseAsync(inputJson, response);
+
         if (toolName == ReadSkillToolName)
             return HandleReadSkill(agent, inputJson, response);
 
@@ -347,10 +370,73 @@ public class ConversationService : IConversationService
     }
 
     /// <summary>
+    /// Handles the built-in search_knowledge_base tool: embeds the query and
+    /// returns the closest knowledge documents via pgvector similarity search.
+    /// </summary>
+    private async Task<(string Result, bool IsError)> HandleSearchKnowledgeBaseAsync(
+        string inputJson, ConversationResponse response)
+    {
+        string query;
+        int maxResults = 5;
+        try
+        {
+            var doc = JsonDocument.Parse(inputJson);
+            query = doc.RootElement.GetProperty("query").GetString() ?? "";
+            if (doc.RootElement.TryGetProperty("max_results", out var maxProp) &&
+                maxProp.ValueKind == JsonValueKind.Number)
+            {
+                maxResults = Math.Clamp((int)maxProp.GetDouble(), 1, 20);
+            }
+        }
+        catch
+        {
+            return ("Error: 'query' parameter is required.", true);
+        }
+
+        if (string.IsNullOrWhiteSpace(query))
+            return ("Error: 'query' must not be empty.", true);
+
+        try
+        {
+            var results = await _knowledgeBase.SearchAsync(query, maxResults);
+
+            response.ActivityLog.Add(new ActivityLogEntry
+            {
+                Type = "info",
+                Message = $"Knowledge base searched: \"{query}\" → {results.Count} result(s)"
+            });
+
+            if (results.Count == 0)
+                return ("No matching documents found in the knowledge base.", false);
+
+            var sb = new StringBuilder();
+            sb.AppendLine($"Found {results.Count} knowledge base entr{(results.Count == 1 ? "y" : "ies")}:");
+            sb.AppendLine();
+            int i = 1;
+            foreach (var doc in results)
+            {
+                sb.AppendLine($"### {i}. {doc.Title}");
+                sb.AppendLine(doc.Content);
+                sb.AppendLine();
+                i++;
+            }
+
+            return (sb.ToString().TrimEnd(), false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Knowledge base search failed for query '{Query}'.", query);
+            // Non-fatal: return the error to the model so it can respond gracefully
+            // (e.g. when the Voyage API key is not configured).
+            return ($"Knowledge base search failed: {ex.Message}", true);
+        }
+    }
+
+    /// <summary>
     /// Phase 2 (Activation): Returns the full SKILL.md body + script tool listing
     /// when Claude calls read_skill. This is the progressive disclosure step.
     /// </summary>
-    private (string Result, ToolResultStatus Status) HandleReadSkill(
+    private (string Result, bool IsError) HandleReadSkill(
         Agent agent, string inputJson, ConversationResponse response)
     {
         string requestedName;
@@ -361,7 +447,7 @@ public class ConversationService : IConversationService
         }
         catch
         {
-            return ("Error: 'skill_name' parameter is required.", ToolResultStatus.Error);
+            return ("Error: 'skill_name' parameter is required.", true);
         }
 
         foreach (var skill in agent.Skills)
@@ -414,7 +500,7 @@ public class ConversationService : IConversationService
                 }
             }
 
-            return (sb.ToString(), ToolResultStatus.Success);
+            return (sb.ToString(), false);
         }
 
         var availableNames = agent.Skills.Select(s =>
@@ -422,14 +508,14 @@ public class ConversationService : IConversationService
             var pr = _skillParser.Parse(s.SkillMd);
             return pr.IsValid ? pr.Frontmatter.Name : s.Name;
         });
-        return ($"Error: Skill '{requestedName}' not found. Available skills: {string.Join(", ", availableNames)}", ToolResultStatus.Error);
+        return ($"Error: Skill '{requestedName}' not found. Available skills: {string.Join(", ", availableNames)}", true);
     }
 
     /// <summary>
     /// Phase 3 (Execution): Finds and executes the correct script by matching
-    /// the Bedrock tool name back to skill + script.
+    /// the tool name back to skill + script.
     /// </summary>
-    private async Task<(string Result, ToolResultStatus Status)> ExecuteSkillScriptAsync(Agent agent, string toolName, string inputJson)
+    private async Task<(string Result, bool IsError)> ExecuteSkillScriptAsync(Agent agent, string toolName, string inputJson)
     {
         foreach (var skill in agent.Skills)
         {
@@ -455,10 +541,10 @@ public class ConversationService : IConversationService
         }
 
         _logger.LogError("No matching skill/script found for tool '{ToolName}'.", toolName);
-        return ($"Error: No matching skill or script found for tool '{toolName}'.", ToolResultStatus.Error);
+        return ($"Error: No matching skill or script found for tool '{toolName}'.", true);
     }
 
-    private async Task<(string Result, ToolResultStatus Status)> RunScriptAsync(AgentSkillScript script, string inputJson)
+    private async Task<(string Result, bool IsError)> RunScriptAsync(AgentSkillScript script, string inputJson)
     {
         string tempFile = Path.Combine(Path.GetTempPath(), $"skill_{Guid.NewGuid()}{GetExtension(script.Language)}");
         await File.WriteAllTextAsync(tempFile, script.Code);
@@ -483,7 +569,7 @@ public class ConversationService : IConversationService
 
             using var process = Process.Start(startInfo);
             if (process == null)
-                return ("Error: Failed to start process.", ToolResultStatus.Error);
+                return ("Error: Failed to start process.", true);
 
             string output = await process.StandardOutput.ReadToEndAsync();
             string error = await process.StandardError.ReadToEndAsync();
@@ -493,15 +579,15 @@ public class ConversationService : IConversationService
             {
                 _logger.LogWarning("Script '{ScriptName}' exited with code {ExitCode}. Stderr: {Stderr}",
                     script.Name, process.ExitCode, error);
-                return ($"Script exited with code {process.ExitCode}:\n{error}", ToolResultStatus.Error);
+                return ($"Script exited with code {process.ExitCode}:\n{error}", true);
             }
 
-            return (output, ToolResultStatus.Success);
+            return (output, false);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Exception running script '{ScriptName}'.", script.Name);
-            return ($"Exception during execution: {ex.Message}", ToolResultStatus.Error);
+            return ($"Exception during execution: {ex.Message}", true);
         }
         finally
         {
@@ -567,27 +653,4 @@ public class ConversationService : IConversationService
         "bash" or "sh" => "bash",
         _ => throw new NotSupportedException($"Unsupported script language: {language}")
     };
-
-    private object? ConvertDocumentToStandard(Document doc)
-    {
-        if (doc.IsNull()) return null;
-        if (doc.IsString()) return doc.AsString();
-        if (doc.IsDouble()) return doc.AsDouble();
-        if (doc.IsBool()) return doc.AsBool();
-        if (doc.IsInt()) return doc.AsInt();
-        if (doc.IsLong()) return doc.AsLong();
-
-        if (doc.IsList())
-            return doc.AsList().Select(ConvertDocumentToStandard).ToList();
-
-        if (doc.IsDictionary())
-        {
-            var dict = new Dictionary<string, object?>();
-            foreach (var kvp in doc.AsDictionary())
-                dict[kvp.Key] = ConvertDocumentToStandard(kvp.Value);
-            return dict;
-        }
-
-        return null;
-    }
 }

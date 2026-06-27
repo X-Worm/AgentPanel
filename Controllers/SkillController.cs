@@ -1,27 +1,32 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using AgentControlPanel.Data;
 using AgentControlPanel.Models;
 using AgentControlPanel.Services;
+using AgentControlPanel.Services.Llm;
 
 namespace AgentControlPanel.Controllers;
 
 public class SkillController : Controller
 {
     private readonly AppDbContext _context;
-    private readonly IBedrockService _bedrockService;
+    private readonly ILlmProvider _llm;
+    private readonly LlmOptions _llmOptions;
     private readonly ISkillParser _skillParser;
     private readonly ILogger<SkillController> _logger;
 
-    public SkillController(AppDbContext context, IBedrockService bedrockService, ISkillParser skillParser, ILogger<SkillController> logger)
+    public SkillController(AppDbContext context, ILlmProvider llm, LlmOptions llmOptions, ISkillParser skillParser, ILogger<SkillController> logger)
     {
         _context = context;
-        _bedrockService = bedrockService;
+        _llm = llm;
+        _llmOptions = llmOptions;
         _skillParser = skillParser;
         _logger = logger;
     }
 
     [HttpPost]
+    [EnableRateLimiting("llm")]
     public async Task<IActionResult> GenerateWithAI([FromBody] string description)
     {
         if (string.IsNullOrEmpty(description)) return BadRequest("Description is required.");
@@ -67,11 +72,15 @@ Call the `weather_lookup__run` tool with the city name to get current conditions
 
 Do not include any extra text, markdown formatting blocks (like ```json), or explanations outside the JSON object.";
 
-        var jsonResponse = await _bedrockService.InvokeClaudeAsync(prompt);
-
-        if (jsonResponse.StartsWith("Error: "))
+        string jsonResponse;
+        try
         {
-            return BadRequest($"AWS Bedrock returned an error: {jsonResponse}");
+            jsonResponse = await _llm.InvokeAsync(_llmOptions.DefaultModel, prompt);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Skill generation failed at the model provider.");
+            return BadRequest($"The model provider ({_llm.ProviderName}) returned an error: {ex.Message}");
         }
 
         var cleanedJson = jsonResponse.Trim();
@@ -139,7 +148,14 @@ Do not include any extra text, markdown formatting blocks (like ```json), or exp
     // GET: Skill
     public async Task<IActionResult> Index()
     {
+        ViewBag.GeneratorModel = ResolveModelDisplayName(_llmOptions.DefaultModel);
         return View(await _context.Skills.ToListAsync());
+    }
+
+    private string ResolveModelDisplayName(string modelId)
+    {
+        var match = _llmOptions.Models.FirstOrDefault(m => m.Id == modelId);
+        return !string.IsNullOrWhiteSpace(match?.DisplayName) ? match!.DisplayName : modelId;
     }
 
     // GET: Skill/Details/5
@@ -148,96 +164,6 @@ Do not include any extra text, markdown formatting blocks (like ```json), or exp
         if (id == null) return NotFound();
         var skill = await _context.Skills.FirstOrDefaultAsync(m => m.Id == id);
         if (skill == null) return NotFound();
-        return View(skill);
-    }
-
-    // GET: Skill/Create
-    public IActionResult Create()
-    {
-        return View();
-    }
-
-    // POST: Skill/Create
-    [HttpPost]
-    [ValidateAntiForgeryToken]
-    public async Task<IActionResult> Create([Bind("Id,Name,SkillMd,ScriptsJson,IsAIGenerated")] Skill skill)
-    {
-        if (ModelState.IsValid)
-        {
-            var nameValidation = _skillParser.ValidateName(skill.Name);
-            if (!nameValidation.IsValid)
-            {
-                foreach (var error in nameValidation.Errors)
-                    ModelState.AddModelError("Name", error);
-                return View(skill);
-            }
-
-            if (!string.IsNullOrWhiteSpace(skill.SkillMd))
-            {
-                var parseResult = _skillParser.Parse(skill.SkillMd);
-                if (!parseResult.IsValid)
-                {
-                    foreach (var error in parseResult.Errors)
-                        ModelState.AddModelError("SkillMd", error);
-                    return View(skill);
-                }
-            }
-
-            _context.Add(skill);
-            await _context.SaveChangesAsync();
-            return RedirectToAction(nameof(Index));
-        }
-        return View(skill);
-    }
-
-    // GET: Skill/Edit/5
-    public async Task<IActionResult> Edit(int? id)
-    {
-        if (id == null) return NotFound();
-        var skill = await _context.Skills.FindAsync(id);
-        if (skill == null) return NotFound();
-        return View(skill);
-    }
-
-    // POST: Skill/Edit/5
-    [HttpPost]
-    [ValidateAntiForgeryToken]
-    public async Task<IActionResult> Edit(int id, [Bind("Id,Name,SkillMd,ScriptsJson,IsAIGenerated")] Skill skill)
-    {
-        if (id != skill.Id) return NotFound();
-        if (ModelState.IsValid)
-        {
-            var nameValidation = _skillParser.ValidateName(skill.Name);
-            if (!nameValidation.IsValid)
-            {
-                foreach (var error in nameValidation.Errors)
-                    ModelState.AddModelError("Name", error);
-                return View(skill);
-            }
-
-            if (!string.IsNullOrWhiteSpace(skill.SkillMd))
-            {
-                var parseResult = _skillParser.Parse(skill.SkillMd);
-                if (!parseResult.IsValid)
-                {
-                    foreach (var error in parseResult.Errors)
-                        ModelState.AddModelError("SkillMd", error);
-                    return View(skill);
-                }
-            }
-
-            try
-            {
-                _context.Update(skill);
-                await _context.SaveChangesAsync();
-            }
-            catch (DbUpdateConcurrencyException)
-            {
-                if (!SkillExists(skill.Id)) return NotFound();
-                else throw;
-            }
-            return RedirectToAction(nameof(Index));
-        }
         return View(skill);
     }
 
@@ -259,10 +185,5 @@ Do not include any extra text, markdown formatting blocks (like ```json), or exp
         if (skill != null) _context.Skills.Remove(skill);
         await _context.SaveChangesAsync();
         return RedirectToAction(nameof(Index));
-    }
-
-    private bool SkillExists(int id)
-    {
-        return _context.Skills.Any(e => e.Id == id);
     }
 }

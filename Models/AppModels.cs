@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using Pgvector;
 
 namespace AgentControlPanel.Models;
 
@@ -9,12 +10,41 @@ public class Agent
     public string Name { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
     public string SystemPrompt { get; set; } = string.Empty;
+
+    /// <summary>
+    /// The Claude model this agent runs on (e.g. "claude-opus-4-8").
+    /// Empty falls back to the configured default model.
+    /// </summary>
+    public string Model { get; set; } = string.Empty;
+
+    /// <summary>
+    /// When true, this agent is given the built-in search_knowledge_base tool
+    /// so it can retrieve documents from the knowledge base during a conversation.
+    /// </summary>
+    public bool KnowledgeBaseEnabled { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
-    
+
     // Relationships
     public List<Skill> Skills { get; set; } = new();
-    public List<KnowledgeBase> KnowledgeBases { get; set; } = new();
-    public List<MCPConfig> MCPConfigs { get; set; } = new();
+}
+
+/// <summary>
+/// A single knowledge base entry: a Title + Content pair whose combined text is
+/// embedded with Voyage and stored as a pgvector for similarity search.
+/// </summary>
+public class KnowledgeDocument
+{
+    public int Id { get; set; }
+    [Required]
+    public string Title { get; set; } = string.Empty;
+    [Required]
+    public string Content { get; set; } = string.Empty;
+
+    /// <summary>The Voyage embedding of "Title\n\nContent" (1024 dimensions).</summary>
+    public Vector? Embedding { get; set; }
+
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }
 
 public class Skill
@@ -45,21 +75,3 @@ public class AgentSkillScript
     public List<ScriptParameter> Parameters { get; set; } = new();
 }
 
-public class KnowledgeBase
-{
-    public int Id { get; set; }
-    [Required]
-    public string Name { get; set; } = string.Empty;
-    public string QdrantCollectionName { get; set; } = string.Empty;
-    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
-}
-
-public class MCPConfig
-{
-    public int Id { get; set; }
-    [Required]
-    public string Name { get; set; } = string.Empty;
-    public string Endpoint { get; set; } = string.Empty;
-    public string ConfigurationJson { get; set; } = string.Empty;
-    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
-}

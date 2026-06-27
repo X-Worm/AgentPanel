@@ -103,6 +103,14 @@
             <h2 class="text-2xl font-bold leading-7 text-gray-900 sm:text-3xl sm:truncate">
                 Testing: @Model.Name
             </h2>
+            <div class="mt-2 flex items-center gap-2">
+                <span class="inline-flex items-center rounded-md bg-indigo-50 px-2 py-1 text-xs font-medium text-indigo-700 ring-1 ring-inset ring-indigo-700/10">
+                    Model: @ViewBag.ResolvedModel
+                </span>
+                <span class="inline-flex items-center rounded-md bg-gray-100 px-2 py-1 text-xs font-medium text-gray-600 ring-1 ring-inset ring-gray-500/10">
+                    via @ViewBag.Provider
+                </span>
+            </div>
         </div>
         <div class="mt-4 flex md:ml-4 md:mt-0 gap-3">
             <button onclick="clearChat()" class="inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50">

@@ -1,0 +1,45 @@
+@model AgentControlPanel.Models.KnowledgeDocument
+
+@{
+    ViewData["Title"] = "Add Knowledge Entry";
+}
+
+<div class="px-4 py-8 max-w-3xl mx-auto">
+    <div class="md:flex md:items-center md:justify-between mb-8">
+        <div class="flex-1 min-w-0">
+            <h2 class="text-2xl font-bold leading-7 text-gray-900 sm:text-3xl sm:truncate">
+                Add Knowledge Entry
+            </h2>
+            <p class="mt-2 text-sm text-gray-500">The title and content are embedded with Voyage and stored for similarity search.</p>
+        </div>
+    </div>
+
+    <div class="bg-white shadow-sm ring-1 ring-gray-900/5 sm:rounded-xl">
+        <form asp-action="Create" class="px-4 py-6 sm:p-8">
+            <div asp-validation-summary="All" class="text-red-600 text-sm mb-4"></div>
+
+            <div class="grid max-w-2xl grid-cols-1 gap-x-6 gap-y-8">
+                <div>
+                    <label asp-for="Title" class="block text-sm font-medium leading-6 text-gray-900">Title</label>
+                    <div class="mt-2">
+                        <input asp-for="Title" class="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-blue-600 sm:text-sm sm:leading-6 px-3" placeholder="e.g., Refund policy" />
+                    </div>
+                    <span asp-validation-for="Title" class="text-red-500 text-xs"></span>
+                </div>
+
+                <div>
+                    <label asp-for="Content" class="block text-sm font-medium leading-6 text-gray-900">Content</label>
+                    <div class="mt-2">
+                        <textarea asp-for="Content" rows="10" class="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-blue-600 sm:text-sm sm:leading-6 px-3" placeholder="The full text of this knowledge entry..."></textarea>
+                    </div>
+                    <span asp-validation-for="Content" class="text-red-500 text-xs"></span>
+                </div>
+            </div>
+
+            <div class="mt-8 flex items-center justify-end gap-x-6 border-t border-gray-900/10 pt-6">
+                <a asp-action="Index" class="text-sm font-semibold leading-6 text-gray-900 hover:text-gray-700">Cancel</a>
+                <button type="submit" class="rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600">Save Entry</button>
+            </div>
+        </form>
+    </div>
+</div>

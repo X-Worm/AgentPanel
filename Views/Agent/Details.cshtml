@@ -17,6 +17,22 @@
                     </svg>
                     Created on @Model.CreatedAt.ToLocalTime().ToString("g")
                 </div>
+                <div class="mt-2 flex items-center text-sm text-gray-500">
+                    <svg class="mr-1.5 h-5 w-5 flex-shrink-0 text-gray-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                        <path fill-rule="evenodd" d="M10 1a4.5 4.5 0 00-4.5 4.5V9H5a2 2 0 00-2 2v6a2 2 0 002 2h10a2 2 0 002-2v-6a2 2 0 00-2-2h-.5V5.5A4.5 4.5 0 0010 1zm3 8V5.5a3 3 0 10-6 0V9h6z" clip-rule="evenodd" />
+                    </svg>
+                    Model: @(string.IsNullOrWhiteSpace(Model.Model) ? "default" : Model.Model)
+                </div>
+                <div class="mt-2 flex items-center text-sm">
+                    @if (Model.KnowledgeBaseEnabled)
+                    {
+                        <span class="inline-flex items-center rounded-md bg-indigo-50 px-2 py-1 text-xs font-medium text-indigo-700 ring-1 ring-inset ring-indigo-700/10">Knowledge base: enabled</span>
+                    }
+                    else
+                    {
+                        <span class="inline-flex items-center rounded-md bg-gray-100 px-2 py-1 text-xs font-medium text-gray-600 ring-1 ring-inset ring-gray-500/10">Knowledge base: off</span>
+                    }
+                </div>
             </div>
         </div>
         <div class="mt-4 flex md:ml-4 md:mt-0 gap-3">

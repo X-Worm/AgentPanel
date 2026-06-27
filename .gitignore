@@ -365,4 +365,7 @@ FodyWeavers.xsd
 # Environment and secret files
 .env
 .env.*
+!.env.example
 appsettings.Local.json
+# Playwright MCP debug artifacts
+.playwright-mcp/

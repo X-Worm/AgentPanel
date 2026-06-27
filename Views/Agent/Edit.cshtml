@@ -1,7 +1,12 @@
 @model AgentControlPanel.Models.Agent
+@using AgentControlPanel.Services.Llm
 
 @{
     ViewData["Title"] = "Edit Agent";
+    var models = (ViewBag.Models as IEnumerable<LlmModelOption>) ?? Enumerable.Empty<LlmModelOption>();
+    var selectedModel = !string.IsNullOrWhiteSpace(Model.Model)
+        ? Model.Model
+        : ((string?)ViewBag.SelectedModel ?? (string?)ViewBag.DefaultModel ?? "");
 }
 
 <div class="px-4 py-8 max-w-3xl mx-auto">
@@ -25,6 +30,19 @@
                         <input asp-for="Name" class="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-blue-600 sm:text-sm sm:leading-6 px-3" />
                     </div>
                     <span asp-validation-for="Name" class="text-red-500 text-xs"></span>
+                </div>
+
+                <div class="sm:col-span-2">
+                    <label for="Model" class="block text-sm font-medium leading-6 text-gray-900">Claude Model</label>
+                    <div class="mt-2">
+                        <select name="Model" id="Model" class="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-blue-600 sm:text-sm sm:leading-6 px-3">
+                            @foreach (var m in models)
+                            {
+                                <option value="@m.Id" selected="@(m.Id == selectedModel)">@m.DisplayName</option>
+                            }
+                        </select>
+                    </div>
+                    <p class="mt-1 text-xs text-gray-500">Model used when this agent runs.</p>
                 </div>
 
                 <div class="col-span-full">
@@ -63,6 +81,19 @@
                     <p id="promptStatusMsg" class="mt-2 text-sm text-red-600 hidden"></p>
                 </div>
                 
+                <!-- Knowledge Base toggle -->
+                <div class="col-span-full">
+                    <div class="relative flex items-start">
+                        <div class="flex h-6 items-center">
+                            <input asp-for="KnowledgeBaseEnabled" type="checkbox" class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600 cursor-pointer" />
+                        </div>
+                        <div class="ml-3 text-sm leading-6">
+                            <label asp-for="KnowledgeBaseEnabled" class="font-medium text-gray-900 cursor-pointer">Enable knowledge base access</label>
+                            <p class="text-gray-500">Gives this agent a <code class="text-xs">search_knowledge_base</code> tool to retrieve stored entries during conversations.</p>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Skills Selection -->
                 <div class="col-span-full border-t border-gray-900/10 pt-6 mt-2">
                     <h3 class="text-sm font-medium leading-6 text-gray-900">Assign Skills</h3>

@@ -9,12 +9,17 @@ public class AppDbContext : DbContext
 
     public DbSet<Agent> Agents { get; set; }
     public DbSet<Skill> Skills { get; set; }
-    public DbSet<KnowledgeBase> KnowledgeBases { get; set; }
-    public DbSet<MCPConfig> MCPConfigs { get; set; }
+    public DbSet<KnowledgeDocument> KnowledgeDocuments { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
-        // Additional configuration if needed
+
+        // Enable the pgvector extension and fix the embedding column dimension
+        // to match the Voyage output (voyage-3-large @ 1024 dims).
+        modelBuilder.HasPostgresExtension("vector");
+        modelBuilder.Entity<KnowledgeDocument>()
+            .Property(d => d.Embedding)
+            .HasColumnType("vector(1024)");
     }
 }

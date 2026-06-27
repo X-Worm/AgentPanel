@@ -8,11 +8,11 @@
             Agent Control Panel
         </h1>
         <p class="mt-4 text-xl text-gray-500">
-            A centralized hub to manage your AI Agents, design Skills, configure vector Knowledge Bases, and orchestrate Model Context Protocol (MCP) integrations.
+            A centralized hub to manage your AI Agents and design Skills, powered by the Claude SDK.
         </p>
     </div>
 
-    <div class="grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-4">
+    <div class="grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-3 max-w-5xl mx-auto">
         
         <!-- Agents Card -->
         <div class="group relative bg-white flex flex-col justify-between rounded-2xl shadow-sm border border-gray-100 p-8 hover:shadow-xl hover:border-blue-200 hover:-translate-y-1 transition-all duration-300">
@@ -35,7 +35,7 @@
                     <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
                 </div>
                 <h3 class="text-xl font-bold text-gray-900 mb-2">Skills</h3>
-                <p class="text-gray-500 mb-6">Define custom capabilities or generate entirely new AI skills via AWS Bedrock.</p>
+                <p class="text-gray-500 mb-6">Define custom capabilities or generate entirely new AI skills with Claude.</p>
             </div>
             <a asp-controller="Skill" asp-action="Index" class="inline-flex mt-auto w-full items-center justify-center px-4 py-2.5 text-sm font-medium text-white bg-brand-600 rounded-lg hover:bg-brand-700 focus:ring-4 focus:ring-brand-100 transition-colors">
                 Manage Skills
@@ -43,32 +43,18 @@
         </div>
 
         <!-- Knowledge Base Card -->
-        <div class="group relative bg-white flex flex-col justify-between rounded-2xl shadow-sm border border-gray-100 p-8 hover:shadow-xl hover:border-green-200 hover:-translate-y-1 transition-all duration-300">
+        <div class="group relative bg-white flex flex-col justify-between rounded-2xl shadow-sm border border-gray-100 p-8 hover:shadow-xl hover:border-indigo-200 hover:-translate-y-1 transition-all duration-300">
             <div>
-                <div class="w-12 h-12 inline-flex items-center justify-center rounded-xl bg-green-50 text-green-600 mb-6 group-hover:scale-110 transition-transform">
-                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
+                <div class="w-12 h-12 inline-flex items-center justify-center rounded-xl bg-indigo-50 text-indigo-600 mb-6 group-hover:scale-110 transition-transform">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.746 0 3.332.477 4.5 1.253v13C19.832 18.477 18.246 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path></svg>
                 </div>
-                <h3 class="text-xl font-bold text-gray-900 mb-2">Knowledge</h3>
-                <p class="text-gray-500 mb-6">Manage context via Qdrant vector storage and advanced RAG configuration.</p>
+                <h3 class="text-xl font-bold text-gray-900 mb-2">Knowledge Base</h3>
+                <p class="text-gray-500 mb-6">Add title + text entries, embedded with Voyage, that agents can search during conversations.</p>
             </div>
-            <a asp-controller="KnowledgeBase" asp-action="Index" class="inline-flex mt-auto w-full items-center justify-center px-4 py-2.5 text-sm font-medium text-white bg-green-600 rounded-lg hover:bg-green-700 focus:ring-4 focus:ring-green-100 transition-colors">
-                Vector DB
+            <a asp-controller="KnowledgeBase" asp-action="Index" class="inline-flex mt-auto w-full items-center justify-center px-4 py-2.5 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 focus:ring-4 focus:ring-indigo-100 transition-colors">
+                Manage Knowledge
             </a>
         </div>
 
-        <!-- MCP Card -->
-        <div class="group relative bg-white flex flex-col justify-between rounded-2xl shadow-sm border border-gray-100 p-8 hover:shadow-xl hover:border-purple-200 hover:-translate-y-1 transition-all duration-300">
-            <div>
-                <div class="w-12 h-12 inline-flex items-center justify-center rounded-xl bg-purple-50 text-purple-600 mb-6 group-hover:scale-110 transition-transform">
-                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path></svg>
-                </div>
-                <h3 class="text-xl font-bold text-gray-900 mb-2">MCP Servers</h3>
-                <p class="text-gray-500 mb-6">Set up and govern Model Context Protocol connections securely.</p>
-            </div>
-            <a asp-controller="MCP" asp-action="Index" class="inline-flex mt-auto w-full items-center justify-center px-4 py-2.5 text-sm font-medium text-white bg-purple-600 rounded-lg hover:bg-purple-700 focus:ring-4 focus:ring-purple-100 transition-colors">
-                Configure MCP
-            </a>
-        </div>
-        
     </div>
 </div>

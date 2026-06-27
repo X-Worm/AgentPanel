@@ -1,31 +1,41 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using AgentControlPanel.Data;
 using AgentControlPanel.Models;
 using AgentControlPanel.Services;
-using Amazon.BedrockRuntime;
-using Amazon.BedrockRuntime.Model;
-using Amazon.Runtime.Documents;
+using AgentControlPanel.Services.Llm;
+using System.Text.Json;
 
 namespace AgentControlPanel.Controllers;
 
 public class AgentController : Controller
 {
     private readonly AppDbContext _context;
-    private readonly IBedrockService _bedrockService;
+    private readonly ILlmProvider _llm;
+    private readonly LlmOptions _llmOptions;
     private readonly IConversationService _conversationService;
     private readonly ILogger<AgentController> _logger;
 
     public AgentController(
         AppDbContext context,
-        IBedrockService bedrockService,
+        ILlmProvider llm,
+        LlmOptions llmOptions,
         IConversationService conversationService,
         ILogger<AgentController> logger)
     {
         _context = context;
-        _bedrockService = bedrockService;
+        _llm = llm;
+        _llmOptions = llmOptions;
         _conversationService = conversationService;
         _logger = logger;
+    }
+
+    private void PopulateModelOptions(string? selected = null)
+    {
+        ViewBag.Models = _llmOptions.Models;
+        ViewBag.DefaultModel = _llmOptions.DefaultModel;
+        ViewBag.SelectedModel = string.IsNullOrWhiteSpace(selected) ? _llmOptions.DefaultModel : selected;
     }
 
     // GET: Agent
@@ -40,7 +50,6 @@ public class AgentController : Controller
         if (id == null) return NotFound();
         var agent = await _context.Agents
             .Include(a => a.Skills)
-            .Include(a => a.KnowledgeBases)
             .FirstOrDefaultAsync(m => m.Id == id);
         if (agent == null) return NotFound();
         return View(agent);
@@ -50,13 +59,14 @@ public class AgentController : Controller
     public async Task<IActionResult> Create()
     {
         ViewBag.Skills = await _context.Skills.ToListAsync();
+        PopulateModelOptions();
         return View();
     }
 
     // POST: Agent/Create
     [HttpPost]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> Create([Bind("Id,Name,Description,SystemPrompt")] Agent agent, int[] selectedSkills)
+    public async Task<IActionResult> Create([Bind("Id,Name,Description,SystemPrompt,Model,KnowledgeBaseEnabled")] Agent agent, int[] selectedSkills)
     {
         if (ModelState.IsValid)
         {
@@ -70,6 +80,7 @@ public class AgentController : Controller
             return RedirectToAction(nameof(Index));
         }
         ViewBag.Skills = await _context.Skills.ToListAsync();
+        PopulateModelOptions(agent.Model);
         return View(agent);
     }
 
@@ -79,18 +90,19 @@ public class AgentController : Controller
         if (id == null) return NotFound();
         var agent = await _context.Agents.Include(a => a.Skills).FirstOrDefaultAsync(a => a.Id == id);
         if (agent == null) return NotFound();
-        
+
         ViewBag.Skills = await _context.Skills.ToListAsync();
+        PopulateModelOptions(agent.Model);
         return View(agent);
     }
 
     // POST: Agent/Edit/5
     [HttpPost]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> Edit(int id, [Bind("Id,Name,Description,SystemPrompt")] Agent agent, int[] selectedSkills)
+    public async Task<IActionResult> Edit(int id, [Bind("Id,Name,Description,SystemPrompt,Model,KnowledgeBaseEnabled")] Agent agent, int[] selectedSkills)
     {
         if (id != agent.Id) return NotFound();
-        
+
         if (ModelState.IsValid)
         {
             try
@@ -101,6 +113,8 @@ public class AgentController : Controller
                 existingAgent.Name = agent.Name;
                 existingAgent.Description = agent.Description;
                 existingAgent.SystemPrompt = agent.SystemPrompt;
+                existingAgent.Model = agent.Model;
+                existingAgent.KnowledgeBaseEnabled = agent.KnowledgeBaseEnabled;
 
                 existingAgent.Skills.Clear();
                 if (selectedSkills != null && selectedSkills.Length > 0)
@@ -119,6 +133,7 @@ public class AgentController : Controller
             return RedirectToAction(nameof(Index));
         }
         ViewBag.Skills = await _context.Skills.ToListAsync();
+        PopulateModelOptions(agent.Model);
         return View(agent);
     }
 
@@ -148,10 +163,13 @@ public class AgentController : Controller
         if (id == null) return NotFound();
         var agent = await _context.Agents.Include(a => a.Skills).FirstOrDefaultAsync(a => a.Id == id);
         if (agent == null) return NotFound();
+        ViewBag.ResolvedModel = _llmOptions.ResolveModel(agent.Model);
+        ViewBag.Provider = _llm.ProviderName;
         return View(agent);
     }
 
     [HttpPost]
+    [EnableRateLimiting("llm")]
     public async Task<IActionResult> SendMessage([FromBody] ChatRequest request)
     {
         _logger.LogInformation(
@@ -165,9 +183,7 @@ public class AgentController : Controller
 
         var history = request.History != null
             ? request.History.Select(MapDtoToMessage).ToList()
-            : new List<Message>();
-
-        _logger.LogDebug("Mapped incoming history to Bedrock model. HistoryCount={HistoryCount}", history.Count);
+            : new List<LlmMessage>();
 
         var result = await _conversationService.ProcessMessageAsync(agent, history, request.Message ?? string.Empty);
         var safeHistory = result.UpdatedHistory.Select(MapMessageToDto).ToList();
@@ -178,10 +194,11 @@ public class AgentController : Controller
             result.ActivityLog.Count,
             result.FinalResponse?.Length ?? 0);
 
-        return Json(new { 
+        return Json(new
+        {
             history = safeHistory,
-            activityLog = result.ActivityLog, 
-            response = result.FinalResponse 
+            activityLog = result.ActivityLog,
+            response = result.FinalResponse
         });
     }
 
@@ -191,6 +208,7 @@ public class AgentController : Controller
     }
 
     [HttpPost]
+    [EnableRateLimiting("llm")]
     public async Task<IActionResult> GenerateSystemPrompt([FromBody] GeneratePromptRequest request)
     {
         if (string.IsNullOrWhiteSpace(request?.Name))
@@ -203,8 +221,16 @@ Agent Description: {request.Description}
 
 Write the system prompt directly to the agent. Establish its persona, primary goals, strict instructions, and operational constraints based on the provided name and description. Only output the raw text of the final system prompt. Do not include introductory or concluding commentary.";
 
-        var systemPrompt = await _bedrockService.InvokeClaudeAsync(prompt);
-        return Json(new { prompt = systemPrompt.Trim() });
+        try
+        {
+            var systemPrompt = await _llm.InvokeAsync(_llmOptions.DefaultModel, prompt);
+            return Json(new { prompt = systemPrompt.Trim() });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to generate system prompt.");
+            return BadRequest($"The model provider returned an error: {ex.Message}");
+        }
     }
 
     public class ChatRequest
@@ -247,44 +273,40 @@ Write the system prompt directly to the agent. Establish its persona, primary go
         public string? Text { get; set; }
     }
 
-    private static ChatMessageDto MapMessageToDto(Message message)
+    private static ChatMessageDto MapMessageToDto(LlmMessage message)
     {
         var dto = new ChatMessageDto
         {
-            Role = message.Role?.Value ?? "user"
+            Role = message.Role == LlmRole.Assistant ? "assistant" : "user"
         };
 
-        foreach (var block in message.Content ?? new List<ContentBlock>())
+        foreach (var block in message.Content)
         {
-            if (!string.IsNullOrEmpty(block.Text))
+            if (block.Text != null)
             {
                 dto.Content.Add(new ChatContentDto { Text = block.Text });
-                continue;
             }
-
-            if (block.ToolUse != null)
+            else if (block.ToolUse != null)
             {
                 dto.Content.Add(new ChatContentDto
                 {
                     ToolUse = new ChatToolUseDto
                     {
-                        ToolUseId = block.ToolUse.ToolUseId,
+                        ToolUseId = block.ToolUse.Id,
                         Name = block.ToolUse.Name,
-                        Input = ConvertDocumentToStandard(block.ToolUse.Input)
+                        Input = ParseInput(block.ToolUse.InputJson)
                     }
                 });
-                continue;
             }
-
-            if (block.ToolResult != null)
+            else if (block.ToolResult != null)
             {
                 dto.Content.Add(new ChatContentDto
                 {
                     ToolResult = new ChatToolResultDto
                     {
                         ToolUseId = block.ToolResult.ToolUseId,
-                        Status = block.ToolResult.Status?.Value ?? "success",
-                        Text = block.ToolResult.Content?.FirstOrDefault()?.Text
+                        Status = block.ToolResult.IsError ? "error" : "success",
+                        Text = block.ToolResult.Text
                     }
                 });
             }
@@ -293,88 +315,58 @@ Write the system prompt directly to the agent. Establish its persona, primary go
         return dto;
     }
 
-    private static Message MapDtoToMessage(ChatMessageDto dto)
+    private static LlmMessage MapDtoToMessage(ChatMessageDto dto)
     {
-        var role = dto.Role?.ToLowerInvariant() == "assistant"
-            ? ConversationRole.Assistant
-            : ConversationRole.User;
-
-        var content = new List<ContentBlock>();
+        var role = dto.Role?.ToLowerInvariant() == "assistant" ? LlmRole.Assistant : LlmRole.User;
+        var content = new List<LlmContentBlock>();
 
         foreach (var block in dto.Content ?? new List<ChatContentDto>())
         {
             if (!string.IsNullOrEmpty(block.Text))
             {
-                content.Add(new ContentBlock { Text = block.Text });
-                continue;
+                content.Add(new LlmContentBlock { Text = block.Text });
             }
-
-            if (block.ToolUse != null)
+            else if (block.ToolUse != null)
             {
-                content.Add(new ContentBlock
+                content.Add(new LlmContentBlock
                 {
-                    ToolUse = new ToolUseBlock
+                    ToolUse = new LlmToolUse
                     {
-                        ToolUseId = block.ToolUse.ToolUseId,
+                        Id = block.ToolUse.ToolUseId,
                         Name = block.ToolUse.Name,
-                        Input = Document.FromObject(block.ToolUse.Input ?? new Dictionary<string, object?>())
+                        InputJson = block.ToolUse.Input != null
+                            ? JsonSerializer.Serialize(block.ToolUse.Input)
+                            : "{}"
                     }
                 });
-                continue;
             }
-
-            if (block.ToolResult != null)
+            else if (block.ToolResult != null)
             {
-                var status = block.ToolResult.Status?.ToLowerInvariant() == "error"
-                    ? ToolResultStatus.Error
-                    : ToolResultStatus.Success;
-
-                content.Add(new ContentBlock
+                content.Add(new LlmContentBlock
                 {
-                    ToolResult = new ToolResultBlock
+                    ToolResult = new LlmToolResult
                     {
                         ToolUseId = block.ToolResult.ToolUseId,
-                        Status = status,
-                        Content = new List<ToolResultContentBlock>
-                        {
-                            new ToolResultContentBlock { Text = block.ToolResult.Text ?? string.Empty }
-                        }
+                        Text = block.ToolResult.Text ?? string.Empty,
+                        IsError = block.ToolResult.Status?.ToLowerInvariant() == "error"
                     }
                 });
             }
         }
 
-        return new Message
-        {
-            Role = role,
-            Content = content
-        };
+        return new LlmMessage { Role = role, Content = content };
     }
 
-    private static object? ConvertDocumentToStandard(Document doc)
+    private static object? ParseInput(string inputJson)
     {
-        if (doc.IsNull()) return null;
-        if (doc.IsString()) return doc.AsString();
-        if (doc.IsDouble()) return doc.AsDouble();
-        if (doc.IsBool()) return doc.AsBool();
-        if (doc.IsInt()) return doc.AsInt();
-        if (doc.IsLong()) return doc.AsLong();
-
-        if (doc.IsList())
+        if (string.IsNullOrWhiteSpace(inputJson)) return null;
+        try
         {
-            return doc.AsList().Select(ConvertDocumentToStandard).ToList();
+            return JsonSerializer.Deserialize<JsonElement>(inputJson);
         }
-
-        if (doc.IsDictionary())
+        catch
         {
-            var dict = new Dictionary<string, object?>();
-            foreach (var kvp in doc.AsDictionary())
-            {
-                dict[kvp.Key] = ConvertDocumentToStandard(kvp.Value);
-            }
-            return dict;
+            return inputJson;
         }
-
-        return null;
     }
 }
